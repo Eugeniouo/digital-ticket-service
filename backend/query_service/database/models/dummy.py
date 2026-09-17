@@ -3,10 +3,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql.sqltypes import String
 
 
-def load_all_models() -> None:
-    """Import models so metadata is registered for Alembic and tests."""
-
-
 class DummyModel(Base):
     """Model for demo purpose as a database table."""
 

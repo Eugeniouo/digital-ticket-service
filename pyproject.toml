@@ -56,6 +56,11 @@ warn_unused_ignores = false
 warn_return_any = false
 namespace_packages = true
 
+[tool.pyright]
+extraPaths = ["backend"]
+venvPath = "."
+venv = ".venv"
+
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
 testpaths = ["backend/tests"]
@@ -128,6 +133,7 @@ line-length = 140
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/*" = [
   "S101",    # Use of assert detected
+  "S105",    # Hardcoded passwords in tests
   "PLC0415", # Import outside toplevel
 ]
 "tests/*" = [
