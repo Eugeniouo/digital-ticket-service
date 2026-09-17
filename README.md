@@ -1,93 +1,173 @@
-# template-gitlab-e14ef621
+# query_service
 
-Template for task: GitLab репозиторий
+This project was generated using fastapi_template.
 
-## Getting started
+## UV
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+This project uses uv. It's a modern dependency management
+tool.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+To run the project use this set of commands:
 
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+```bash
+uv sync --locked
+uv run -m query_service
 ```
-cd existing_repo
-git remote add origin https://git.codenrock.com/codenrock/khakaton-postcode-challenge-ot-pochtatekha/template-gitlab-e14ef621.git
-git branch -M main
-git push -uf origin main
+Or with `just`:
+```bash
+just run
 ```
 
-## Integrate with your tools
+This will start the server on the configured host.
 
-- [ ] [Set up project integrations](https://git.codenrock.com/codenrock/khakaton-postcode-challenge-ot-pochtatekha/template-gitlab-e14ef621/-/settings/integrations)
+You can find swagger documentation at `/api/docs`.
 
-## Collaborate with your team
+You can read more about uv here: https://docs.astral.sh/ruff/
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+## Docker
 
-## Test and Deploy
+You can start the project with docker using this command:
 
-Use the built-in continuous integration in GitLab.
+```bash
+docker compose up --build
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+This command exposes the web application on port 8000, mounts current directory and enables autoreload.
 
-***
+But you have to rebuild image every time you modify `uv.lock` or `pyproject.toml` with this command:
 
-# Editing this README
+```bash
+docker compose build
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Project structure
 
-## Suggestions for a good README
+```bash
+$ tree backend
+backend
+├── query_service
+│   ├── __main__.py      # Startup script. Starts uvicorn.
+│   ├── application.py   # FastAPI application configuration.
+│   ├── lifespan.py      # Actions to perform on startup and shutdown.
+│   ├── settings.py      # Main configuration settings for project.
+│   ├── log.py           # Logging configuration.
+│   ├── api              # Package with all handlers.
+│   │   └── router.py    # Main router.
+│   ├── database         # SQLAlchemy session, models, utils.
+│   ├── migrations       # Alembic migrations.
+│   └── modules          # Feature modules (handlers, schemas, services, repositories, exceptions).
+└── tests                # Tests for project.
+    └── conftest.py      # Fixtures for all tests.
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+## Adding a feature
 
-## Name
-Choose a self-explaining name for your project.
+Copy `backend/query_service/modules/dummy` as a template.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+1. Create `backend/query_service/modules/<feature>/` with:
+   * `schema.py` — request/response DTOs;
+   * `repository.py` — database access;
+   * `service.py` — business logic;
+   * `handler.py` — FastAPI router;
+   * optional `exceptions.py`.
+2. Add a SQLAlchemy model in `database/` and generate a migration if the table is new.
+3. Export `router` from the module `__init__.py`.
+4. Include it in `backend/query_service/api/router.py`.
+5. Add tests under `backend/tests/`.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+## Configuration
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+This application can be configured with environment variables.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+You can create `.env` file in the root directory and place all
+environment variables here. 
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+All environment variables should start with "QUERY_SERVICE_" prefix.
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+For example if you see in your "backend/query_service/settings.py" a variable named like
+`random_parameter`, you should provide the "QUERY_SERVICE_RANDOM_PARAMETER" 
+variable to configure the value. This behaviour can be changed by overriding `env_prefix` property
+in `query_service.settings.Settings`.
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+An example of .env file:
+```bash
+QUERY_SERVICE_RELOAD="True"
+QUERY_SERVICE_PORT="6969"
+QUERY_SERVICE_ENVIRONMENT="dev"
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+You can read more about BaseSettings class here: https://pydantic-docs.helpmanual.io/usage/settings/
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## Pre-commit
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+To install pre-commit simply run inside the shell:
+```bash
+pre-commit install
+```
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+pre-commit is very useful to check your code before publishing it.
+It's configured using .pre-commit-config.yaml file.
 
-## License
-For open source projects, say how it is licensed.
+By default it runs:
+* mypy (validates types);
+* ruff (spots possible bugs);
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+
+You can read more about pre-commit here: https://pre-commit.com/
+
+## Migrations
+
+If you want to migrate your database, you should run following commands:
+```bash
+# To run all migrations until the migration with revision_id.
+alembic upgrade "<revision_id>"
+
+# To perform all pending migrations.
+alembic upgrade "head"
+```
+
+### Reverting migrations
+
+If you want to revert migrations, you should run:
+```bash
+# revert all migrations up to: revision_id.
+alembic downgrade <revision_id>
+
+# Revert everything.
+ alembic downgrade base
+```
+
+### Migration generation
+
+To generate migrations you should run:
+```bash
+# For automatic change detection.
+alembic revision --autogenerate
+
+# For empty file generation.
+alembic revision
+```
+
+
+## Running tests
+
+If you want to run it in docker, simply run:
+
+```bash
+docker compose run --build --rm api pytest -vv .
+docker compose down
+```
+
+For running tests on your local machine.
+1. you need to start all aux services.
+
+We can do so by using our `docker-compose.yaml` configuration. It already has everything we need.
+
+```bash
+docker compose up -d --wait db
+```
+
+2. Run tests.
+```bash
+pytest -vv .
+```

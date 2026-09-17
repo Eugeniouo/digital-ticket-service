@@ -1,0 +1,59 @@
+services:
+  api: &main_app
+    build:
+      context: backend
+      target: dev
+      dockerfile: ./Dockerfile
+    image: query_service:${QUERY_SERVICE_VERSION:-latest}
+    restart: always
+    ports:
+      # Exposes application port.
+    - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      QUERY_SERVICE_HOST: 0.0.0.0
+      QUERY_SERVICE_RELOAD: "True"
+      QUERY_SERVICE_DB_HOST: query-service-db
+      QUERY_SERVICE_DB_PORT: 5432
+      QUERY_SERVICE_DB_USER: query_service
+      QUERY_SERVICE_DB_PASS: query_service
+      QUERY_SERVICE_DB_BASE: query_service
+    volumes:
+      - .:/app/src/
+
+  db:
+    image: postgres:18.3-trixie
+    hostname: query-service-db
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: "query_service"
+      POSTGRES_USER: "query_service"
+      POSTGRES_DB: "query_service"
+    volumes:
+      - query-service-db-data:/var/lib/postgresql
+    restart: always
+    healthcheck:
+      test: pg_isready -U query_service
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  migrator:
+    <<: *main_app
+    restart: "no"
+    command: alembic upgrade head
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  query-service-db-data:
+    name: query-service-db-data
