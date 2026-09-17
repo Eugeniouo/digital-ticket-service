@@ -1,6 +1,6 @@
 from fastapi import Depends
 
-from query_service.database.models import DummyModel
+from query_service.database.models.dummy import DummyModel
 from query_service.modules.dummy.repository import DummyRepository
 
 
