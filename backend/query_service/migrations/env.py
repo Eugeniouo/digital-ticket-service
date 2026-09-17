@@ -5,7 +5,7 @@ from alembic import context
 from sqlalchemy.ext.asyncio.engine import create_async_engine
 from sqlalchemy.future import Connection
 from query_service.database.meta import meta
-from query_service.database.models.dummy import load_all_models
+from query_service.database.models.load import load_all_models
 from query_service.settings import settings
 
 # this is the Alembic Config object, which provides
