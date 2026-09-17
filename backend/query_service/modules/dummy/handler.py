@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.param_functions import Depends
 
-from query_service.database.models import DummyModel
+from query_service.database.models.dummy import DummyModel
 from query_service.modules.dummy.schema import (
     DummyModelDTO,
     DummyModelRequestDTO,

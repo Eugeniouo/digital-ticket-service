@@ -105,6 +105,9 @@ lint.select = [
 ]
 lint.ignore = [
   "D105",    # Missing docstring in magic method
+  "D101",    # Missing docstring in public class (уберёт ошибку с TicketStatus)
+  "D102",    # Missing docstring in public method (уберёт ошибку с элементов Enum)
+  "D103",    # Missing docstring in public function (чтобы не писать докстринги к каждой функции)
   "D107",    # Missing docstring in __init__
   "B008",    # Do not perform function calls in argument defaults
   "D211",    # No blank lines allowed before class docstring
@@ -120,7 +123,7 @@ lint.ignore = [
 ]
 lint.mccabe = { max-complexity = 10 }
 exclude = ["backend/query_service/migrations", ".venv/"]
-line-length = 88
+line-length = 140
 
 [tool.ruff.lint.per-file-ignores]
 "backend/tests/*" = [

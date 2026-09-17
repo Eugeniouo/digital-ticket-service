@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_service.database.dependencies import get_db_session
-from query_service.database.models import DummyModel
+from query_service.database.models.dummy import DummyModel
 
 
 class DummyRepository:
