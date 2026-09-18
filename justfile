@@ -14,3 +14,6 @@ up:
 
 down:
     docker compose down -v
+
+migrations message:
+    uv run alembic revision --autogenerate -m "{{message}}"
