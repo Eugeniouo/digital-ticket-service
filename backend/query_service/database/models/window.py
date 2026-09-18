@@ -17,10 +17,10 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from department import Department
-    from service import Service
-    from slot import Slot
-    from ticket import Ticket
+    from .department import Department
+    from .service import Service
+    from .slot import Slot
+    from .ticket import Ticket
 
 
 class WindowStatus(StrEnum):

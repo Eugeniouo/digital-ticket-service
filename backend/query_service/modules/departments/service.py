@@ -32,6 +32,4 @@ class DepartmentService:
             close_time=payload.close_time,
             is_active=payload.is_active,
         )
-        self.repository.add(department)
-        await self.repository.session.flush()
-        return department
+        return await self.repository.add(department)
