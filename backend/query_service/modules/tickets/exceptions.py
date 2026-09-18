@@ -1,0 +1,22 @@
+class TicketNotFoundError(Exception):
+    """Ticket does not exist."""
+
+
+class SlotNotFoundError(Exception):
+    """Slot does not exist."""
+
+
+class ServiceNotFoundError(Exception):
+    """Service does not exist."""
+
+
+class InactiveServiceError(Exception):
+    """Service is currently inactive and cannot accept tickets."""
+
+
+class InvalidTicketStateError(Exception):
+    """Action cannot be performed due to the current ticket status."""
+
+
+class MissingSlotIdError(Exception):
+    """Slot ID is required for this ticket source."""

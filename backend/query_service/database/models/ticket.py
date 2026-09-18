@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
-from query_service.modules.tickets.enums import TicketSource, TicketStatus
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -14,6 +14,21 @@ if TYPE_CHECKING:
     from .service import Service
     from .slot import Slot
     from .window import Window
+
+
+# Перечисления относятся к типу данных - существуют в слое базы данных.
+class TicketSource(StrEnum):
+    WEB = "web"
+    QR = "qr"
+    WALK_IN = "walk-in"
+
+
+class TicketStatus(StrEnum):
+    QUEUED = "queued"
+    CALLED = "called"
+    SERVING = "serving"
+    COMPLETED = "completed"
+    CANCELED = "canceled"
 
 
 class Ticket(Base):
@@ -64,8 +79,9 @@ class Ticket(Base):
         server_default=TicketStatus.QUEUED.value,
     )
 
-    priority_key: Mapped[str] = mapped_column(
-        String,
+    # TODO: рассмотреть другую структуру данных для Priority Key (bigint???)
+    priority_key: Mapped[int] = mapped_column(
+        Integer,
         nullable=False,
     )
 
