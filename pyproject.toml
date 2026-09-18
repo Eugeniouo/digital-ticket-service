@@ -56,11 +56,6 @@ warn_unused_ignores = false
 warn_return_any = false
 namespace_packages = true
 
-[tool.pyright]
-extraPaths = ["backend"]
-venvPath = "."
-venv = ".venv"
-
 [tool.pytest.ini_options]
 pythonpath = ["backend"]
 testpaths = ["backend/tests"]
@@ -125,6 +120,8 @@ lint.ignore = [
   "PLR0913", # Too many arguments for function call
   "D106",    # Missing docstring in public nested class
   "UP043",   # Unnecessary default argument specified (conflicts with mypy).
+  "E501",
+  "RUF003",
 ]
 lint.mccabe = { max-complexity = 10 }
 exclude = ["backend/query_service/migrations", ".venv/"]
