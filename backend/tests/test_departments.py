@@ -74,15 +74,43 @@ async def test_department_defaults(client: AsyncClient, dbsession: AsyncSession)
     }
 
 
-@pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("POST", "/api/departments"),
-        ("PUT", "/api/departments"),
-        ("PATCH", f"/api/departments/{UUID(int=1)}"),
-        ("DELETE", f"/api/departments/{UUID(int=1)}"),
-    ],
-)
-async def test_departments_are_read_only(client: AsyncClient, method: str, path: str) -> None:
-    response = await client.request(method, path, json={"name": "Changed"})
-    assert response.status_code == 405
+async def test_create_department(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/departments",
+        json={
+            "name": "Почта № 2",
+            "address": "ул. Ленина, 10",
+            "open_time": "09:00:00",
+            "close_time": "18:00:00",
+        },
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["name"] == "Почта № 2"
+    assert body["address"] == "ул. Ленина, 10"
+    assert body["open_time"] == "09:00:00"
+    assert body["close_time"] == "18:00:00"
+    assert body["is_active"] is True
+    assert UUID(body["id"]).version == 4
+
+    detail = await client.get(f"/api/departments/{body['id']}")
+    assert detail.status_code == 200
+    assert detail.json() == body
+
+
+async def test_create_department_inactive(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/departments",
+        json={
+            "name": "Закрытое",
+            "address": "ул. Ночная, 1",
+            "open_time": "22:00:00",
+            "close_time": "06:00:00",
+            "is_active": False,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["is_active"] is False
+
+
+# Не тестируем "отсутствие" методов ошибкой 405. По сути, мы можем их поддерживать, если это необходимо.

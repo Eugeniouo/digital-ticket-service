@@ -20,3 +20,6 @@ class DepartmentRepository:
 
     async def get_by_id(self, department_id: UUID) -> Department | None:
         return await self.session.get(Department, department_id)
+
+    def add(self, department: Department) -> None:
+        self.session.add(department)

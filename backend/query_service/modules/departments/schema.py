@@ -1,7 +1,7 @@
 from datetime import time
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DepartmentDTO(BaseModel):
@@ -15,3 +15,13 @@ class DepartmentDTO(BaseModel):
     open_time: time
     close_time: time
     is_active: bool
+
+
+class DepartmentCreateRequestDTO(BaseModel):
+    """Payload for creating a department."""
+
+    name: str = Field(min_length=1)
+    address: str = Field(min_length=1)
+    open_time: time
+    close_time: time
+    is_active: bool = True
