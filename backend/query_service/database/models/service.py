@@ -14,9 +14,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from department import Department
-    from slot import Slot
-    from window import Window
+    from .department import Department
+    from .slot import Slot
+    from .window import Window
 
 
 class Service(Base):

@@ -18,9 +18,9 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from service import Service
-    from ticket import Ticket
-    from window import Window
+    from .service import Service
+    from .ticket import Ticket
+    from .window import Window
 
 
 class Slot(Base):

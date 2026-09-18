@@ -9,8 +9,8 @@ from sqlalchemy import Boolean, String, Time, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from service import Service
-    from window import Window
+    from .service import Service
+    from .window import Window
 
 
 class Department(Base):
