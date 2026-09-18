@@ -1,19 +1,23 @@
-export PYTHONPATH := justfile_directory() / "backend"
-
 default:
   @just --list
 
-run:
+serve:
     uv sync --locked
     uv run -m query_service
 
 up:
     docker compose up -d --wait db
+
+run:
+    just up
     uv run alembic upgrade head
-    just run
+    just serve
 
 down:
     docker compose down -v
 
-migrations message:
+generate_migrations message:
+    just down
+    just up
+    uv run alembic upgrade head
     uv run alembic revision --autogenerate -m "{{message}}"

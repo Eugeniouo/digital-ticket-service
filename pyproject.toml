@@ -17,7 +17,6 @@ dependencies = [
   "alembic >=1.17.2,<2",
   "asyncpg >=0.31.0,<1",
   "httptools >=0.7.1,<1",
-  "loguru >=0.7.3,<1",
 ]
 
 [dependency-groups]
@@ -32,9 +31,16 @@ dev = [
   "httpx >=0.28.1,<1",
 ]
 
+[build-system]
+requires = ["uv_build>=0.12.16,<0.13"]
+build-backend = "uv_build"
 
 [tool.uv]
 default-groups = ["dev"]
+
+[tool.uv.build-backend]
+module-name = "query_service"
+module-root = "backend"
 
 [tool.isort]
 profile = "black"

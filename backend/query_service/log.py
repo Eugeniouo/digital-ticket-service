@@ -1,63 +1,24 @@
 import logging
 import sys
 
-from loguru import logger
-
 from query_service.settings import settings
 
-
-class InterceptHandler(logging.Handler):
-    """
-    Default handler from examples in loguru documentation.
-
-    This handler intercepts all log requests and
-    passes them to loguru.
-
-    For more info see:
-    https://loguru.readthedocs.io/en/stable/overview.html#entirely-compatible-with-standard-logging
-    """
-
-    def emit(self, record: logging.LogRecord) -> None:  # pragma: no cover
-        """
-        Propagates logs to loguru.
-
-        :param record: record to log.
-        """
-        try:
-            level: str | int = logger.level(record.levelname).name
-        except ValueError:
-            level = record.levelno
-
-        # Find caller from where originated the logged message
-        frame, depth = logging.currentframe(), 2
-        while frame.f_code.co_filename == logging.__file__:  # pyright: ignore[reportOptionalMemberAccess]
-            frame = frame.f_back  # type: ignore
-            depth += 1
-
-        logger.opt(depth=depth, exception=record.exc_info).log(
-            level,
-            record.getMessage(),
-        )
+LOG_FORMAT = "%(asctime)s [%(levelname)s] (%(process)d) %(name)s: %(message)s"
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 def configure_logging() -> None:  # pragma: no cover
     """Configures logging."""
-    intercept_handler = InterceptHandler()
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT))
 
-    logging.basicConfig(handlers=[intercept_handler], level=logging.NOTSET)
+    root = logging.getLogger()
+    root.handlers.clear()
+    root.addHandler(handler)
+    root.setLevel(settings.log_level.value)
 
-    for logger_name in logging.root.manager.loggerDict:
-        if logger_name.startswith("uvicorn."):
-            logging.getLogger(logger_name).handlers = []
-
-    # change handler for default uvicorn logger
-    logging.getLogger("uvicorn").handlers = [intercept_handler]
-    logging.getLogger("uvicorn.error").handlers = [intercept_handler]
-    logging.getLogger("uvicorn.access").handlers = [intercept_handler]
-
-    # set logs output, level and format
-    logger.remove()
-    logger.add(
-        sys.stdout,
-        level=settings.log_level.value,
-    )
+    # One sink via root; avoid duplicate lines from uvicorn's own handlers.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uv_logger = logging.getLogger(name)
+        uv_logger.handlers.clear()
+        uv_logger.propagate = True
