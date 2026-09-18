@@ -33,10 +33,8 @@ async def _engine(anyio_backend: Any) -> AsyncGenerator[AsyncEngine, None]:
 
     :yield: new engine.
     """
+    from query_service.database import models as _models  # noqa: F401
     from query_service.database.meta import meta
-    from query_service.database.models.load import load_all_models
-
-    load_all_models()
 
     await create_database()
 
