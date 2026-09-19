@@ -5,7 +5,6 @@ from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-import pytest_asyncio
 from query_service.database.models.department import Department
 from query_service.database.models.service import Service
 from query_service.database.models.slot import Slot
@@ -31,7 +30,7 @@ class QueueContext:
     other_window: Window
 
 
-@pytest_asyncio.fixture
+@pytest.fixture
 async def queue_context(dbsession: AsyncSession) -> QueueContext:
     department = Department(
         name=f"Test department {uuid4()}",
@@ -121,7 +120,6 @@ def make_ticket(
     )
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_chooses_lowest_priority_key(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -165,7 +163,6 @@ async def test_assign_next_ticket_chooses_lowest_priority_key(
     assert worse.status == TicketStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_uses_created_at_as_tie_breaker(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -206,7 +203,6 @@ async def test_assign_next_ticket_uses_created_at_as_tie_breaker(
     assert selected.ticket_label == "older"
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "source",
     [TicketSource.QR, TicketSource.WALK_IN],
@@ -239,7 +235,6 @@ async def test_assign_next_ticket_accepts_live_ticket_sources(
     assert selected.status == TicketStatus.CALLED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_ignores_wrong_service(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -278,7 +273,6 @@ async def test_assign_next_ticket_ignores_wrong_service(
     assert wrong_service.status == TicketStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_ignores_other_department(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -318,7 +312,6 @@ async def test_assign_next_ticket_ignores_other_department(
     assert wrong_department.status == TicketStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_ignores_ticket_for_another_window_slot(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -374,7 +367,6 @@ async def test_assign_next_ticket_ignores_ticket_for_another_window_slot(
     assert wrong_window.status == TicketStatus.QUEUED
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "status",
     [TicketStatus.COMPLETED, TicketStatus.CANCELED],
@@ -419,7 +411,6 @@ async def test_assign_next_ticket_ignores_non_queued_ticket(
     assert non_queued.status == status
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_accepts_due_web_ticket(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -455,7 +446,6 @@ async def test_assign_next_ticket_accepts_due_web_ticket(
     assert selected.status == TicketStatus.CALLED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_rejects_web_noshow(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -487,7 +477,6 @@ async def test_assign_next_ticket_rejects_web_noshow(
     assert ticket.status == TicketStatus.QUEUED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
     dbsession: AsyncSession,
     queue_context: QueueContext,
@@ -539,7 +528,6 @@ async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
     assert completed.status == TicketStatus.COMPLETED
 
 
-@pytest.mark.asyncio
 async def test_assign_next_ticket_rejects_second_call_while_ticket_is_active(
     dbsession: AsyncSession,
     queue_context: QueueContext,

@@ -8,16 +8,25 @@ serve:
 up:
     docker compose up -d --wait db
 
+down:
+    docker compose down -v
+
 run:
     just up
     uv run alembic upgrade head
     just serve
 
-down:
-    docker compose down -v
 
-generate_migrations message:
+fresh:
     just down
     just up
     uv run alembic upgrade head
+
+
+generate_migrations message:
+    just fresh
     uv run alembic revision --autogenerate -m "{{message}}"
+
+test:
+    just fresh
+    uv run pytest
