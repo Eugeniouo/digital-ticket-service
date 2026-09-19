@@ -28,3 +28,7 @@ class ServiceNotInDepartmentError(Exception):
 
 class DuplicateWindowLabelError(Exception):
     """Window label is already used in this department."""
+
+
+class WindowHasActiveTicketError(Exception):
+    """Window cannot be closed while a ticket is called or serving."""

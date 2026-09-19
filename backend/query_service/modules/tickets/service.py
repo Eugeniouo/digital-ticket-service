@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -16,7 +16,7 @@ from query_service.modules.tickets.exceptions import (
     SlotServiceMismatchError,
     TicketNotFoundError,
 )
-from query_service.modules.tickets.priority import compute_priority_key
+from query_service.modules.tickets.priority import QUEUE_TIMEZONE, compute_priority_key, now_in_queue_tz
 from query_service.modules.tickets.repository import TicketRepository
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
 
@@ -57,7 +57,7 @@ class TicketService:
         if request.source == TicketSource.WEB and not request.slot_id:
             raise MissingSlotIdError
 
-        effective_start = datetime.now(UTC)
+        effective_start = now_in_queue_tz()
 
         if request.source == TicketSource.WEB and request.slot_id is not None:
             slot = await self.slots_repo.get_slot_in_department(department_id, request.slot_id)
@@ -72,7 +72,8 @@ class TicketService:
             if not reserved:
                 raise SlotFullError
 
-            effective_start = datetime.combine(slot.slot_date, slot.slot_time).replace(tzinfo=UTC)
+            # slot_date/slot_time are wall-clock in queue timezone (Europe/Moscow by default)
+            effective_start = datetime.combine(slot.slot_date, slot.slot_time, tzinfo=QUEUE_TIMEZONE)
 
         priority_key = compute_priority_key(request.source, effective_start)
 
@@ -115,12 +116,13 @@ class TicketService:
         return response_data
 
     async def cancel_ticket(self, department_id: UUID, ticket_id: UUID) -> TicketResponse:
-        ticket = await self.repository.get_by_id(ticket_id)
+        ticket = await self.repository.get_by_id_for_update(ticket_id)
 
         if not ticket or ticket.department_id != department_id:
             raise TicketNotFoundError
 
-        if ticket.status in (TicketStatus.SERVING, TicketStatus.COMPLETED, TicketStatus.CANCELED):
+        # Only QUEUED: refuse if already called/serving (avoids race with call-next)
+        if ticket.status != TicketStatus.QUEUED:
             raise InvalidTicketStateError
 
         slot_id = ticket.slot_id

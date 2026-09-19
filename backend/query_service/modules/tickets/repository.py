@@ -2,15 +2,14 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_service.database.dependencies import get_db_session
-from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
+from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
 from query_service.modules.tickets.exceptions import TicketNotFoundError
-from query_service.modules.tickets.priority import BONUS_SECONDS, MAX_WAIT_SECONDS, PRIORITY_ANCHOR
 
 
 class TicketRepository:
@@ -26,6 +25,9 @@ class TicketRepository:
 
     async def get_by_id(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.get(Ticket, ticket_id)
+
+    async def get_by_id_for_update(self, ticket_id: UUID) -> Ticket | None:
+        return await self.session.scalar(select(Ticket).where(Ticket.id == ticket_id).with_for_update())
 
     async def update_status(self, ticket_id: UUID, status: TicketStatus) -> Ticket:
         ticket = await self.get_by_id(ticket_id)
@@ -107,33 +109,3 @@ class TicketRepository:
 
         await self.session.flush()
         return ticket
-
-    async def promote_stale_tickets(self) -> int:
-        """
-        Anti-starvation джоба. Находит талоны, которые ждут дольше положенного,
-        и дает им абсолютный приоритет (priority_key = 0).
-
-        TODO: Добавить в lifespan???
-        """
-        now_seconds = int((datetime.now(UTC) - PRIORITY_ANCHOR).total_seconds())
-        updated_count = 0
-
-        for source in TicketSource:
-            max_wait = MAX_WAIT_SECONDS.get(source, 0)
-            bonus = BONUS_SECONDS.get(source, 0)
-            cutoff_key = now_seconds - max_wait - bonus
-
-            stmt = (
-                update(Ticket)
-                .where(
-                    Ticket.status == TicketStatus.QUEUED, Ticket.source == source, Ticket.priority_key > 0, Ticket.priority_key < cutoff_key
-                )
-                .values(priority_key=0)
-                .returning(Ticket.id)
-            )
-            result = await self.session.execute(stmt)
-
-            updated_count += len(result.scalars().all())
-
-        await self.session.flush()
-        return updated_count

@@ -11,6 +11,7 @@ from query_service.modules.windows.exceptions import (
     ServiceNotInDepartmentError,
     TicketAlreadyInProgressError,
     WindowClosedError,
+    WindowHasActiveTicketError,
     WindowNotFoundError,
 )
 from query_service.modules.windows.schema import (
@@ -72,7 +73,10 @@ async def create_window(
 @router.patch(
     "/{window_id}",
     response_model=WindowDTO,
-    responses={404: {"description": "Window not found in this department"}},
+    responses={
+        404: {"description": "Window not found in this department"},
+        409: {"description": "Window has an active ticket and cannot be closed"},
+    },
 )
 async def update_window(
     department_id: UUID,
@@ -93,6 +97,12 @@ async def update_window(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Service not available in this department",
+        ) from exc
+
+    except WindowHasActiveTicketError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Window has an active ticket and cannot be closed",
         ) from exc
 
 

@@ -127,9 +127,8 @@ async def cancel_ticket(
     svc: TicketService = Depends(),
 ) -> TicketResponse:
     """
-    Cancel an active ticket.
-    A ticket cannot be canceled if it is currently being served,
-    already completed, or previously canceled.
+    Cancel a queued ticket.
+    A ticket cannot be canceled after it was called, completed, or already canceled.
     """
     try:
         return await svc.cancel_ticket(department_id, ticket_id)
@@ -143,5 +142,5 @@ async def cancel_ticket(
     except InvalidTicketStateError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Ticket is already in progress, completed, or canceled",
+            detail="Ticket is not queued and cannot be canceled",
         ) from exc

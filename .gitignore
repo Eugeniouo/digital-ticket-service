@@ -146,3 +146,6 @@ AGENTS.md
 CLAUDE.md
 .cursor/
 .grok/
+
+# OS
+.DS_Store

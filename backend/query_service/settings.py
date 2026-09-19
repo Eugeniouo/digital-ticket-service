@@ -46,6 +46,15 @@ class Settings(BaseSettings):
     db_base: str = "query_service"
     db_echo: bool = False
 
+    # Queue priority
+    queue_timezone: str = "Europe/Moscow"
+    queue_bonus_web: int = 300
+    queue_bonus_qr: int = 0
+    queue_bonus_walk_in: int = 0
+    queue_max_wait_web: int = 900
+    queue_max_wait_qr: int = 1200
+    queue_max_wait_walk_in: int = 1200
+
     @property
     def db_url(self) -> URL:
         """
