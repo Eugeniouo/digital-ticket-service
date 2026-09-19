@@ -7,6 +7,9 @@ from query_service.modules.tickets.exceptions import (
     InvalidTicketStateError,
     MissingSlotIdError,
     ServiceNotFoundError,
+    SlotFullError,
+    SlotNotFoundError,
+    SlotServiceMismatchError,
     TicketNotFoundError,
 )
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
@@ -20,8 +23,9 @@ router = APIRouter(tags=["Tickets"])
     response_model=TicketResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
-        404: {"description": "Service not found in this department"},
-        400: {"description": "Service is inactive or missing required slot_id"},
+        404: {"description": "Service or slot not found in this department"},
+        400: {"description": "Service inactive, missing slot_id, or slot/service mismatch"},
+        409: {"description": "Slot is full"},
     },
     summary="Issue a new ticket",
 )
@@ -44,6 +48,12 @@ async def create_ticket(
             detail="Service not found in this department",
         ) from exc
 
+    except SlotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Slot not found in this department",
+        ) from exc
+
     except InactiveServiceError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -56,12 +66,24 @@ async def create_ticket(
             detail="Slot ID is required for web appointments",
         ) from exc
 
+    except SlotServiceMismatchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Slot does not belong to the requested service",
+        ) from exc
+
+    except SlotFullError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Slot has no remaining capacity",
+        ) from exc
+
 
 @router.get(
     "/{ticket_id}",
     response_model=TicketResponse,
     responses={
-        404: {"description": "Ticket not found in this department"},
+        404: {"description": "Ticket or related slot not found in this department"},
     },
     summary="Get ticket details",
 )
@@ -81,6 +103,12 @@ async def get_ticket(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ticket not found in this department",
+        ) from exc
+
+    except SlotNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Slot not found for this ticket",
         ) from exc
 
 
