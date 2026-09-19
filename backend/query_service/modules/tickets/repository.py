@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +10,14 @@ from query_service.database.dependencies import get_db_session
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
 from query_service.modules.tickets.exceptions import TicketNotFoundError
+from query_service.modules.tickets.priority import (
+    now_in_queue_tz,
+    now_priority_seconds,
+    overdue_live_rank,
+    overdue_live_sql,
+    queue_eligible_sql,
+    web_noshow_sql,
+)
 
 
 class TicketRepository:
@@ -52,20 +60,65 @@ class TicketRepository:
 
         return ticket
 
+    async def expire_web_noshows(self, department_id: UUID) -> list[UUID]:
+        """Cancel QUEUED WEB tickets past no-show. Returns slot_ids to free."""
+        now_seconds = now_priority_seconds()
+
+        tickets = list(
+            await self.session.scalars(
+                select(Ticket)
+                .where(
+                    Ticket.department_id == department_id,
+                    Ticket.status == TicketStatus.QUEUED,
+                    web_noshow_sql(now_seconds),
+                )
+                .with_for_update(skip_locked=True),
+            ),
+        )
+        if not tickets:
+            return []
+
+        now = datetime.now(UTC)
+        slot_ids: list[UUID] = []
+        for ticket in tickets:
+            ticket.status = TicketStatus.CANCELED
+            ticket.canceled_at = now
+            if ticket.slot_id is not None:
+                slot_ids.append(ticket.slot_id)
+
+        await self.session.flush()
+
+        return slot_ids
+
     async def count_tickets_before(self, target_ticket: Ticket) -> int:
         """
-        Считает количество талонов в статусе QUEUED перед нами.
-        Благодаря priority_key нам не нужно джойнить таблицу Slot
-        или проверять даты, это все учтено в самом ключе.
+        Count QUEUED tickets ahead for the same service, using assign_next order:
+        eligible only, then overdue_live, priority_key, created_at.
         """
+        now_seconds = now_priority_seconds()
+        overdue = overdue_live_sql(now_seconds)
+        target_rank = overdue_live_rank(target_ticket.source, target_ticket.priority_key, now_seconds)
+
+        ahead = or_(
+            overdue < target_rank,
+            and_(
+                overdue == target_rank,
+                Ticket.priority_key < target_ticket.priority_key,
+            ),
+            and_(
+                overdue == target_rank,
+                Ticket.priority_key == target_ticket.priority_key,
+                Ticket.created_at < target_ticket.created_at,
+            ),
+        )
+
         stmt = select(func.count(Ticket.id)).where(
             Ticket.department_id == target_ticket.department_id,
+            Ticket.service_id == target_ticket.service_id,
             Ticket.status == TicketStatus.QUEUED,
             Ticket.id != target_ticket.id,
-            or_(
-                Ticket.priority_key < target_ticket.priority_key,
-                (Ticket.priority_key == target_ticket.priority_key) & (Ticket.created_at < target_ticket.created_at),
-            ),
+            queue_eligible_sql(now_seconds),
+            ahead,
         )
 
         return await self.session.scalar(stmt) or 0
@@ -74,7 +127,8 @@ class TicketRepository:
         """
         Атомарно получает следующий номер талона для конкретного отделения, дня и префикса.
         """
-        today = datetime.now(UTC).date()
+        # Calendar day in queue timezone (not UTC) so series matches wall-clock queue day
+        today = now_in_queue_tz().date()
 
         stmt = (
             insert(TicketCounter)
@@ -93,6 +147,7 @@ class TicketRepository:
 
         result = await self.session.execute(stmt)
         await self.session.flush()
+
         return result.scalar_one()
 
     async def requeue_ticket(self, ticket_id: UUID, elapsed_seconds: int = 0) -> Ticket:

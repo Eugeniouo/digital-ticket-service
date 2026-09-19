@@ -21,6 +21,7 @@ class TicketResponse(BaseModel):
     ticket_label: str
     created_at: datetime
     called_at: datetime | None
+    started_at: datetime | None = None
     completed_at: datetime | None
     canceled_at: datetime | None
     estimated_wait_time: int | None = None
@@ -33,4 +34,4 @@ class TicketCreateRequest(BaseModel):
 
     service_id: UUID
     source: TicketSource
-    slot_id: UUID | None
+    slot_id: UUID | None = None

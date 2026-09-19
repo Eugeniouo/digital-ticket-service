@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Uuid, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Uuid, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -122,3 +122,13 @@ class Ticket(Base):
 
     department: Mapped[Department] = relationship()
     service: Mapped[Service] = relationship()
+
+    __table_args__ = (
+        # One CALLED|SERVING ticket per window (app locks + DB guard)
+        Index(
+            "uq_ticket_one_active_per_window",
+            "window_id",
+            unique=True,
+            postgresql_where=text("status IN ('called', 'serving') AND window_id IS NOT NULL"),
+        ),
+    )
