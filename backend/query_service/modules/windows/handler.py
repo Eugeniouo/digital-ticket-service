@@ -2,6 +2,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from query_service.modules.tickets.exceptions import InactiveServiceError, InvalidTicketStateError
 from query_service.modules.tickets.schema import TicketResponse
 from query_service.modules.windows.exceptions import (
     DepartmentNotFoundError,
@@ -19,6 +20,7 @@ from query_service.modules.windows.exceptions import (
 from query_service.modules.windows.schema import (
     WindowCreateRequestDTO,
     WindowDTO,
+    WindowRedirectRequestDTO,
     WindowUpdateRequestDTO,
 )
 from query_service.modules.windows.service import WindowsService
@@ -206,6 +208,78 @@ async def complete(
         ) from exc
 
     except NoTicketInProgressError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No ticket in progress at this window",
+        ) from exc
+
+
+@router.post(
+    "/{window_id}:requeue",
+    response_model=TicketResponse,
+    responses={
+        404: {"description": "Window not found in this department"},
+        409: {"description": "No ticket in progress at this window"},
+    },
+)
+async def requeue(
+    department_id: UUID,
+    window_id: UUID,
+    svc: WindowsService = Depends(),
+) -> TicketResponse:
+    try:
+        return TicketResponse.model_validate(await svc.requeue(department_id, window_id))
+
+    except WindowNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Window not found in this department",
+        ) from exc
+
+    except (NoTicketInProgressError, InvalidTicketStateError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No ticket in progress at this window",
+        ) from exc
+
+
+@router.post(
+    "/{window_id}:redirect",
+    response_model=TicketResponse,
+    responses={
+        404: {"description": "Window not found in this department"},
+        400: {"description": "Service not in department or inactive"},
+        409: {"description": "No ticket in progress at this window"},
+    },
+)
+async def redirect(
+    department_id: UUID,
+    window_id: UUID,
+    payload: WindowRedirectRequestDTO,
+    svc: WindowsService = Depends(),
+) -> TicketResponse:
+    try:
+        return TicketResponse.model_validate(await svc.redirect(department_id, window_id, payload))
+
+    except WindowNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Window not found in this department",
+        ) from exc
+
+    except ServiceNotInDepartmentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Service not found in this department",
+        ) from exc
+
+    except InactiveServiceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The requested service is currently inactive",
+        ) from exc
+
+    except (NoTicketInProgressError, InvalidTicketStateError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No ticket in progress at this window",

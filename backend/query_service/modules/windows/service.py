@@ -1,9 +1,13 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket
 from query_service.database.models.window import Window, WindowStatus
+from query_service.modules.services.repository import ServiceRepository
+from query_service.modules.slots.repository import SlotsRepository
+from query_service.modules.tickets.exceptions import InactiveServiceError
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
     DepartmentNotFoundError,
@@ -11,11 +15,17 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoCalledTicketError,
     NoTicketInProgressError,
+    ServiceNotInDepartmentError,
     WindowHasActiveTicketError,
     WindowNotFoundError,
 )
 from query_service.modules.windows.repository import WindowsRepository
-from query_service.modules.windows.schema import WindowCreateRequestDTO, WindowDTO, WindowUpdateRequestDTO
+from query_service.modules.windows.schema import (
+    WindowCreateRequestDTO,
+    WindowDTO,
+    WindowRedirectRequestDTO,
+    WindowUpdateRequestDTO,
+)
 
 
 def window_to_dto(window: Window) -> WindowDTO:
@@ -29,6 +39,12 @@ def window_to_dto(window: Window) -> WindowDTO:
     )
 
 
+def _elapsed_at_window_seconds(ticket: Ticket) -> int:
+    if ticket.called_at is None:
+        return 0
+    return max(0, int((datetime.now(UTC) - ticket.called_at).total_seconds()))
+
+
 class WindowsService:
     """Create, update, and operate department windows."""
 
@@ -36,9 +52,13 @@ class WindowsService:
         self,
         repository: WindowsRepository = Depends(),
         tickets: TicketService = Depends(),
+        services: ServiceRepository = Depends(),
+        slots: SlotsRepository = Depends(),
     ) -> None:
         self.repository = repository
         self.tickets = tickets
+        self.services = services
+        self.slots = slots
 
     async def list_windows(self, department_id: UUID) -> list[WindowDTO]:
         department = await self.repository.get_department(department_id)
@@ -120,3 +140,49 @@ class WindowsService:
             raise NoTicketInProgressError
 
         return ticket
+
+    async def requeue(self, department_id: UUID, window_id: UUID) -> Ticket:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+
+        ticket = await self.repository.get_in_progress_ticket_for_update(window)
+        if ticket is None:
+            raise NoTicketInProgressError
+
+        elapsed = _elapsed_at_window_seconds(ticket)
+
+        return await self.tickets.repository.requeue_ticket(ticket, elapsed)
+
+    async def redirect(
+        self,
+        department_id: UUID,
+        window_id: UUID,
+        payload: WindowRedirectRequestDTO,
+    ) -> Ticket:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+
+        ticket = await self.repository.get_in_progress_ticket_for_update(window)
+        if ticket is None:
+            raise NoTicketInProgressError
+
+        service = await self.services.get_by_id(payload.service_id)
+        if service is None or service.department_id != department_id:
+            raise ServiceNotInDepartmentError
+        if not service.is_active:
+            raise InactiveServiceError
+
+        # We drop slot so another window can pick WEB type request after change
+        slot_id = ticket.slot_id
+        ticket.service_id = payload.service_id
+        ticket.slot_id = None
+
+        elapsed = _elapsed_at_window_seconds(ticket)
+        requeued = await self.tickets.repository.requeue_ticket(ticket, elapsed)
+
+        if slot_id is not None:
+            await self.slots.try_decrement_booked(slot_id)
+
+        return requeued

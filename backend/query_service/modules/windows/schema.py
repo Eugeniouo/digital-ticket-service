@@ -29,3 +29,9 @@ class WindowUpdateRequestDTO(BaseModel):
 
     status: WindowStatus | None = None
     service_ids: list[UUID] | None = None
+
+
+class WindowRedirectRequestDTO(BaseModel):
+    """Payload for redirecting the current ticket to another service."""
+
+    service_id: UUID

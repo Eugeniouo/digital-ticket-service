@@ -167,6 +167,18 @@ class WindowsRepository:
 
         return ticket
 
+    async def get_in_progress_ticket_for_update(self, window: Window) -> Ticket | None:
+        return await self.session.scalar(
+            select(Ticket)
+            .where(
+                Ticket.window_id == window.id,
+                Ticket.status.in_((TicketStatus.CALLED, TicketStatus.SERVING)),
+            )
+            .order_by(Ticket.called_at, Ticket.id)
+            .limit(1)
+            .with_for_update(),
+        )
+
     async def start_current_ticket(self, window: Window) -> Ticket | None:
         ticket = await self.session.scalar(
             select(Ticket)
@@ -188,16 +200,7 @@ class WindowsRepository:
         return ticket
 
     async def complete_current_ticket(self, window: Window) -> Ticket | None:
-        ticket = await self.session.scalar(
-            select(Ticket)
-            .where(
-                Ticket.window_id == window.id,
-                Ticket.status.in_((TicketStatus.CALLED, TicketStatus.SERVING)),
-            )
-            .order_by(Ticket.called_at, Ticket.id)
-            .limit(1)
-            .with_for_update(),
-        )
+        ticket = await self.get_in_progress_ticket_for_update(window)
         if ticket is None:
             return None
 
