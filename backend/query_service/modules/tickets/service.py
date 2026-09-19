@@ -1,9 +1,11 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.modules.services.repository import ServiceRepository
+from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.slots.repository import SlotsRepository
 from query_service.modules.tickets.exceptions import (
     InactiveServiceError,
@@ -11,10 +13,10 @@ from query_service.modules.tickets.exceptions import (
     MissingSlotIdError,
     ServiceNotFoundError,
     SlotFullError,
-    SlotNotFoundError,
     SlotServiceMismatchError,
     TicketNotFoundError,
 )
+from query_service.modules.tickets.priority import compute_priority_key
 from query_service.modules.tickets.repository import TicketRepository
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
 
@@ -50,35 +52,40 @@ class TicketService:
 
         if not service or service.department_id != department_id:
             raise ServiceNotFoundError
-
         if not service.is_active:
             raise InactiveServiceError
-
         if request.source == TicketSource.WEB and not request.slot_id:
             raise MissingSlotIdError
 
+        effective_start = datetime.now(UTC)
+
         if request.source == TicketSource.WEB and request.slot_id is not None:
             slot = await self.slots_repo.get_slot_in_department(department_id, request.slot_id)
+
             if slot is None:
                 raise SlotNotFoundError
+
             if slot.service_id != request.service_id:
                 raise SlotServiceMismatchError
+
             reserved = await self.slots_repo.try_increment_booked(request.slot_id)
             if not reserved:
                 raise SlotFullError
 
+            effective_start = datetime.combine(slot.slot_date, slot.slot_time).replace(tzinfo=UTC)
+
+        priority_key = compute_priority_key(request.source, effective_start)
+
         prefix = self._get_category_prefix(service.name)
         next_number = await self.repository.get_next_ticket_number(department_id, prefix)
         ticket_label = f"{prefix}-{next_number:03d}"
-
-        priority_map = {TicketSource.WEB: 100, TicketSource.QR: 50, TicketSource.WALK_IN: 10}
 
         ticket_data = Ticket(
             department_id=department_id,
             service_id=request.service_id,
             slot_id=request.slot_id,
             source=request.source,
-            priority_key=priority_map.get(request.source, 10),
+            priority_key=priority_key,
             ticket_label=ticket_label,
         )
 
@@ -93,6 +100,7 @@ class TicketService:
             raise TicketNotFoundError
 
         estimated_wait_minutes = 0
+
         if ticket.status == TicketStatus.QUEUED:
             tickets_ahead = await self.repository.count_tickets_before(ticket)
 

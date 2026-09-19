@@ -2,15 +2,15 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_service.database.dependencies import get_db_session
-from query_service.database.models.slot import Slot
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
-from query_service.modules.tickets.exceptions import SlotNotFoundError, TicketNotFoundError
+from query_service.modules.tickets.exceptions import TicketNotFoundError
+from query_service.modules.tickets.priority import BONUS_SECONDS, MAX_WAIT_SECONDS, PRIORITY_ANCHOR
 
 
 class TicketRepository:
@@ -53,37 +53,17 @@ class TicketRepository:
     async def count_tickets_before(self, target_ticket: Ticket) -> int:
         """
         Считает количество талонов в статусе QUEUED перед нами.
-        Сравнивает время создания для QR/WALK_IN и время слота для WEB.
+        Благодаря priority_key нам не нужно джойнить таблицу Slot
+        или проверять даты, это все учтено в самом ключе.
         """
-        if target_ticket.source == TicketSource.WEB:
-            slot = target_ticket.slot
-
-            if not slot:
-                slot = await self.session.get(Slot, target_ticket.slot_id)
-
-            if not slot:
-                raise SlotNotFoundError
-
-            target_dt = datetime.combine(slot.slot_date, slot.slot_time).replace(tzinfo=UTC)
-        else:
-            target_dt = target_ticket.created_at
-
-        target_date = target_dt.date()
-        target_time = target_dt.time()
-
-        stmt = (
-            select(func.count(Ticket.id))
-            .outerjoin(Ticket.slot)
-            .where(
-                Ticket.department_id == target_ticket.department_id,
-                Ticket.status == TicketStatus.QUEUED,
-                Ticket.id != target_ticket.id,
-                or_(
-                    (Ticket.source.in_([TicketSource.QR, TicketSource.WALK_IN])) & (Ticket.created_at < target_dt),
-                    (Ticket.source == TicketSource.WEB)
-                    & or_(Slot.slot_date < target_date, (Slot.slot_date == target_date) & (Slot.slot_time < target_time)),
-                ),
-            )
+        stmt = select(func.count(Ticket.id)).where(
+            Ticket.department_id == target_ticket.department_id,
+            Ticket.status == TicketStatus.QUEUED,
+            Ticket.id != target_ticket.id,
+            or_(
+                Ticket.priority_key < target_ticket.priority_key,
+                (Ticket.priority_key == target_ticket.priority_key) & (Ticket.created_at < target_ticket.created_at),
+            ),
         )
 
         return await self.session.scalar(stmt) or 0
@@ -100,9 +80,8 @@ class TicketRepository:
                 department_id=department_id,
                 date=today,
                 prefix=prefix,
-                current_value=1,  # Если записи нет, начнем с 1
+                current_value=1,
             )
-            # Формируем запрос INSERT ON CONFLICT
             .on_conflict_do_update(
                 index_elements=["department_id", "date", "prefix"],
                 set_={"current_value": TicketCounter.current_value + 1},
@@ -113,3 +92,48 @@ class TicketRepository:
         result = await self.session.execute(stmt)
         await self.session.flush()
         return result.scalar_one()
+
+    async def requeue_ticket(self, ticket_id: UUID, elapsed_seconds: int = 0) -> Ticket:
+        """Возврат в QUEUED. Клиент не теряет место, a сдвигается вперед на потраченное время."""
+        ticket = await self.get_by_id(ticket_id)
+        if not ticket:
+            raise TicketNotFoundError
+
+        ticket.status = TicketStatus.QUEUED
+        ticket.window_id = None
+
+        new_key = ticket.priority_key - elapsed_seconds
+        ticket.priority_key = max(0, new_key)
+
+        await self.session.flush()
+        return ticket
+
+    async def promote_stale_tickets(self) -> int:
+        """
+        Anti-starvation джоба. Находит талоны, которые ждут дольше положенного,
+        и дает им абсолютный приоритет (priority_key = 0).
+
+        TODO: Добавить в lifespan???
+        """
+        now_seconds = int((datetime.now(UTC) - PRIORITY_ANCHOR).total_seconds())
+        updated_count = 0
+
+        for source in TicketSource:
+            max_wait = MAX_WAIT_SECONDS.get(source, 0)
+            bonus = BONUS_SECONDS.get(source, 0)
+            cutoff_key = now_seconds - max_wait - bonus
+
+            stmt = (
+                update(Ticket)
+                .where(
+                    Ticket.status == TicketStatus.QUEUED, Ticket.source == source, Ticket.priority_key > 0, Ticket.priority_key < cutoff_key
+                )
+                .values(priority_key=0)
+                .returning(Ticket.id)
+            )
+            result = await self.session.execute(stmt)
+
+            updated_count += len(result.scalars().all())
+
+        await self.session.flush()
+        return updated_count
