@@ -20,3 +20,11 @@ class InvalidTicketStateError(Exception):
 
 class MissingSlotIdError(Exception):
     """Slot ID is required for this ticket source."""
+
+
+class SlotServiceMismatchError(Exception):
+    """Slot belongs to a different service than the ticket request."""
+
+
+class SlotFullError(Exception):
+    """Slot has no remaining capacity."""
