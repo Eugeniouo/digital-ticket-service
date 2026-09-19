@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from query_service.database.dependencies import get_db_session
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
-from query_service.modules.tickets.exceptions import TicketNotFoundError
+from query_service.modules.tickets.exceptions import InvalidTicketStateError, TicketNotFoundError
 from query_service.modules.tickets.priority import (
     now_in_queue_tz,
     now_priority_seconds,
@@ -150,17 +150,19 @@ class TicketRepository:
 
         return result.scalar_one()
 
-    async def requeue_ticket(self, ticket_id: UUID, elapsed_seconds: int = 0) -> Ticket:
-        """Возврат в QUEUED. Клиент не теряет место, a сдвигается вперед на потраченное время."""
-        ticket = await self.get_by_id(ticket_id)
-        if not ticket:
-            raise TicketNotFoundError
+    async def requeue_ticket(self, ticket: Ticket, elapsed_seconds: int = 0) -> Ticket:
+        """Возврат в QUEUED. Клиент не теряет место, a сдвигается вперед на потраченное время.
+
+        Caller must hold the ticket row locked (FOR UPDATE).
+        """
+        if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
+            raise InvalidTicketStateError
 
         ticket.status = TicketStatus.QUEUED
         ticket.window_id = None
-
-        new_key = ticket.priority_key - elapsed_seconds
-        ticket.priority_key = max(0, new_key)
+        ticket.called_at = None
+        ticket.started_at = None
+        ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
 
         await self.session.flush()
         return ticket
