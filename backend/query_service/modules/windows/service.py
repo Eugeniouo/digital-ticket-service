@@ -10,6 +10,7 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoTicketInProgressError,
     WindowClosedError,
+    WindowHasActiveTicketError,
     WindowNotFoundError,
 )
 from query_service.modules.windows.repository import WindowsRepository
@@ -65,6 +66,9 @@ class WindowsService:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
+
+        if payload.status == WindowStatus.CLOSED and await self.repository.ticket_exists_for_window(window.id):
+            raise WindowHasActiveTicketError
 
         await self.repository.update(
             window,
