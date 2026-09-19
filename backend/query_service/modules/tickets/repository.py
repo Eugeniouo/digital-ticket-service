@@ -103,7 +103,7 @@ class TicketRepository:
         ticket.window_id = None
 
         new_key = ticket.priority_key - elapsed_seconds
-        ticket.priority_key = max(0, new_key) if ticket.priority_key == 0 else new_key
+        ticket.priority_key = max(0, new_key)
 
         await self.session.flush()
         return ticket
