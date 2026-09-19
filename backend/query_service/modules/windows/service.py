@@ -4,12 +4,13 @@ from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket
 from query_service.database.models.window import Window, WindowStatus
+from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
     DepartmentNotFoundError,
     DuplicateWindowLabelError,
     EmptyQueueError,
+    NoCalledTicketError,
     NoTicketInProgressError,
-    WindowClosedError,
     WindowHasActiveTicketError,
     WindowNotFoundError,
 )
@@ -31,8 +32,13 @@ def window_to_dto(window: Window) -> WindowDTO:
 class WindowsService:
     """Create, update, and operate department windows."""
 
-    def __init__(self, repository: WindowsRepository = Depends()) -> None:
+    def __init__(
+        self,
+        repository: WindowsRepository = Depends(),
+        tickets: TicketService = Depends(),
+    ) -> None:
         self.repository = repository
+        self.tickets = tickets
 
     async def list_windows(self, department_id: UUID) -> list[WindowDTO]:
         department = await self.repository.get_department(department_id)
@@ -63,7 +69,8 @@ class WindowsService:
         window_id: UUID,
         payload: WindowUpdateRequestDTO,
     ) -> WindowDTO:
-        window = await self.repository.get_in_department(department_id, window_id)
+        # Lock window before close check so call-next cannot sneak an active ticket in
+        window = await self.repository.get_in_department_for_update(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
 
@@ -75,18 +82,32 @@ class WindowsService:
             status=payload.status,
             service_ids=payload.service_ids,
         )
+
         return window_to_dto(window)
 
     async def call_next(self, department_id: UUID, window_id: UUID) -> Ticket:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
-        if window.status != WindowStatus.OPEN:
-            raise WindowClosedError
 
+        await self.tickets.expire_web_noshows(department_id)
+
+        # OPEN / empty-services / in-progress re-checked under FOR UPDATE in assign_next_ticket
         ticket = await self.repository.assign_next_ticket(window)
         if ticket is None:
             raise EmptyQueueError
+
+        return ticket
+
+    async def start(self, department_id: UUID, window_id: UUID) -> Ticket:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+
+        ticket = await self.repository.start_current_ticket(window)
+        if ticket is None:
+            raise NoCalledTicketError
+
         return ticket
 
     async def complete(self, department_id: UUID, window_id: UUID) -> Ticket:
@@ -97,4 +118,5 @@ class WindowsService:
         ticket = await self.repository.complete_current_ticket(window)
         if ticket is None:
             raise NoTicketInProgressError
+
         return ticket

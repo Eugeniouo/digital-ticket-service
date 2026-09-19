@@ -7,11 +7,13 @@ from query_service.modules.windows.exceptions import (
     DepartmentNotFoundError,
     DuplicateWindowLabelError,
     EmptyQueueError,
+    NoCalledTicketError,
     NoTicketInProgressError,
     ServiceNotInDepartmentError,
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasActiveTicketError,
+    WindowHasNoServicesError,
     WindowNotFoundError,
 )
 from query_service.modules.windows.schema import (
@@ -133,6 +135,12 @@ async def call_next(
     except WindowClosedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Window is closed") from exc
 
+    except WindowHasNoServicesError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Window has no services configured",
+        ) from exc
+
     except TicketAlreadyInProgressError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -143,6 +151,35 @@ async def call_next(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="No queued ticket for this window",
+        ) from exc
+
+
+@router.post(
+    "/{window_id}:start",
+    response_model=TicketResponse,
+    responses={
+        404: {"description": "Window not found in this department"},
+        409: {"description": "No called ticket at this window to start serving"},
+    },
+)
+async def start(
+    department_id: UUID,
+    window_id: UUID,
+    svc: WindowsService = Depends(),
+) -> TicketResponse:
+    try:
+        return TicketResponse.model_validate(await svc.start(department_id, window_id))
+
+    except WindowNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Window not found in this department",
+        ) from exc
+
+    except NoCalledTicketError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No called ticket at this window to start serving",
         ) from exc
 
 

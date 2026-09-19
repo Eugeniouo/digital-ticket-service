@@ -2,13 +2,13 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.tickets.exceptions import (
     InactiveServiceError,
     InvalidTicketStateError,
     MissingSlotIdError,
     ServiceNotFoundError,
     SlotFullError,
-    SlotNotFoundError,
     SlotServiceMismatchError,
     TicketNotFoundError,
 )
@@ -83,7 +83,7 @@ async def create_ticket(
     "/{ticket_id}",
     response_model=TicketResponse,
     responses={
-        404: {"description": "Ticket or related slot not found in this department"},
+        404: {"description": "Ticket not found in this department"},
     },
     summary="Get ticket details",
 )
@@ -103,12 +103,6 @@ async def get_ticket(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Ticket not found in this department",
-        ) from exc
-
-    except SlotNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Slot not found for this ticket",
         ) from exc
 
 

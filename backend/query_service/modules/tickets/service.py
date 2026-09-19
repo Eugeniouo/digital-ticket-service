@@ -16,7 +16,12 @@ from query_service.modules.tickets.exceptions import (
     SlotServiceMismatchError,
     TicketNotFoundError,
 )
-from query_service.modules.tickets.priority import QUEUE_TIMEZONE, compute_priority_key, now_in_queue_tz
+from query_service.modules.tickets.priority import (
+    QUEUE_TIMEZONE,
+    compute_priority_key,
+    is_queue_eligible,
+    now_in_queue_tz,
+)
 from query_service.modules.tickets.repository import TicketRepository
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
 
@@ -31,6 +36,12 @@ class TicketService:
         self.repository = repository
         self.service_repo = service_repo
         self.slots_repo = slots_repo
+
+    async def expire_web_noshows(self, department_id: UUID) -> None:
+        slot_ids = await self.repository.expire_web_noshows(department_id)
+
+        for slot_id in slot_ids:
+            await self.slots_repo.try_decrement_booked(slot_id)
 
     def _get_category_prefix(self, service_name: str) -> str:
         """Determines the ticket prefix based on the service name."""
@@ -95,14 +106,16 @@ class TicketService:
         return TicketResponse.model_validate(created_ticket)
 
     async def get_ticket_info(self, department_id: UUID, ticket_id: UUID) -> TicketResponse:
-        ticket = await self.repository.get_by_id(ticket_id)
+        await self.expire_web_noshows(department_id)
 
+        ticket = await self.repository.get_by_id(ticket_id)
         if not ticket or ticket.department_id != department_id:
             raise TicketNotFoundError
 
         estimated_wait_minutes = 0
 
-        if ticket.status == TicketStatus.QUEUED:
+        # ETA only for live-eligible QUEUED tickets; same service + order as assign_next
+        if ticket.status == TicketStatus.QUEUED and is_queue_eligible(ticket.source, ticket.priority_key):
             tickets_ahead = await self.repository.count_tickets_before(ticket)
 
             service = await self.service_repo.get_by_id(ticket.service_id)

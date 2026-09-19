@@ -14,8 +14,16 @@ class EmptyQueueError(Exception):
     """No queued ticket matches this window's services."""
 
 
+class WindowHasNoServicesError(Exception):
+    """Call-next needs at least one service bound to the window."""
+
+
 class NoTicketInProgressError(Exception):
     """Window has no called or serving ticket to complete."""
+
+
+class NoCalledTicketError(Exception):
+    """Window has no CALLED ticket to start serving."""
 
 
 class TicketAlreadyInProgressError(Exception):
