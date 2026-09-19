@@ -110,9 +110,8 @@ class WindowsRepository:
                 Ticket.status == TicketStatus.QUEUED,
                 Ticket.service_id.in_(service_ids),
             )
-            .order_by(Ticket.priority_key, Ticket.id)
+            .order_by(Ticket.priority_key.asc(), Ticket.created_at.asc())
             .limit(1)
-            # Avoid race condition.
             .with_for_update(skip_locked=True),
         )
         if ticket is None:
