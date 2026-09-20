@@ -6,6 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from query_service.database.dependencies import get_db_session
+from query_service.database.models.department import Department
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
 from query_service.modules.tickets.priority import (
@@ -32,8 +33,22 @@ class TicketRepository:
 
         return ticket
 
+    async def get_department(self, department_id: UUID) -> Department | None:
+        return await self.session.get(Department, department_id)
+
     async def get_by_id(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.get(Ticket, ticket_id)
+
+    async def list_incomplete(self, department_id: UUID) -> list[Ticket]:
+        result = await self.session.scalars(
+            select(Ticket)
+            .where(
+                Ticket.department_id == department_id,
+                Ticket.status.in_((TicketStatus.QUEUED, TicketStatus.CALLED, TicketStatus.SERVING)),
+            )
+            .order_by(Ticket.created_at),
+        )
+        return list(result.all())
 
     async def get_by_id_locked(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.scalar(select(Ticket).where(Ticket.id == ticket_id).with_for_update())
