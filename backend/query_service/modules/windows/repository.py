@@ -46,7 +46,7 @@ class WindowsRepository:
             select(Window).where(Window.id == window_id, Window.department_id == department_id).options(selectinload(Window.services))
         )
 
-    async def get_in_department_for_update(self, department_id: UUID, window_id: UUID) -> Window | None:
+    async def get_in_department_locked(self, department_id: UUID, window_id: UUID) -> Window | None:
         return await self.session.scalar(
             select(Window)
             .where(Window.id == window_id, Window.department_id == department_id)
@@ -145,7 +145,7 @@ class WindowsRepository:
             .with_for_update(skip_locked=True, of=Ticket),
         )
 
-    async def get_in_progress_ticket_for_update(self, window: Window) -> Ticket | None:
+    async def get_in_progress_ticket_locked(self, window: Window) -> Ticket | None:
         return await self.session.scalar(
             select(Ticket)
             .where(
@@ -157,7 +157,7 @@ class WindowsRepository:
             .with_for_update(),
         )
 
-    async def get_called_ticket_for_update(self, window: Window) -> Ticket | None:
+    async def get_called_ticket_locked(self, window: Window) -> Ticket | None:
         return await self.session.scalar(
             select(Ticket)
             .where(

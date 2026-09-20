@@ -35,10 +35,10 @@ class TicketRepository:
     async def get_by_id(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.get(Ticket, ticket_id)
 
-    async def get_by_id_for_update(self, ticket_id: UUID) -> Ticket | None:
+    async def get_by_id_locked(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.scalar(select(Ticket).where(Ticket.id == ticket_id).with_for_update())
 
-    async def lock_web_noshows(self, department_id: UUID) -> list[Ticket]:
+    async def select_locked_web_noshows(self, department_id: UUID) -> list[Ticket]:
         """Lock QUEUED WEB tickets past no-show for this department."""
         now_seconds = now_priority_seconds()
 

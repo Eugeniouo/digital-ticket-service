@@ -95,7 +95,7 @@ class WindowsService:
         payload: WindowUpdateRequestDTO,
     ) -> WindowDTO:
         # Lock window before close check so call-next cannot sneak an active ticket in
-        window = await self.repository.get_in_department_for_update(department_id, window_id)
+        window = await self.repository.get_in_department_locked(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
 
@@ -117,13 +117,15 @@ class WindowsService:
         return window_to_dto(window)
 
     async def call_next(self, department_id: UUID, window_id: UUID) -> Ticket:
+        """
+        Call-next moves the queue on a given window.
+        By moving a queue, we run a lot of checks, so everything stays consistent and avoids data races.
+        """
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
 
         await self.tickets.expire_web_noshows(department_id)
-
-        # Re-lock and re-check OPEN (close ↔ call-next race)
         locked = await self.repository.lock_window(window.id)
         if locked is None:
             raise EmptyQueueError
@@ -152,7 +154,7 @@ class WindowsService:
         if window is None:
             raise WindowNotFoundError
 
-        ticket = await self.repository.get_called_ticket_for_update(window)
+        ticket = await self.repository.get_called_ticket_locked(window)
         if ticket is None:
             raise NoCalledTicketError
 
@@ -167,7 +169,7 @@ class WindowsService:
         if window is None:
             raise WindowNotFoundError
 
-        ticket = await self.repository.get_in_progress_ticket_for_update(window)
+        ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
             raise NoTicketInProgressError
 
@@ -181,8 +183,7 @@ class WindowsService:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
-
-        ticket = await self.repository.get_in_progress_ticket_for_update(window)
+        ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
             raise NoTicketInProgressError
 
@@ -199,11 +200,9 @@ class WindowsService:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
-
-        ticket = await self.repository.get_in_progress_ticket_for_update(window)
+        ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
             raise NoTicketInProgressError
-
         service = await self.services.get_by_id(payload.service_id)
         if service is None or service.department_id != department_id:
             raise ServiceNotInDepartmentError

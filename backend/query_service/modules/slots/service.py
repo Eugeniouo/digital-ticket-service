@@ -142,6 +142,7 @@ class SlotsService:
         await self.repository.delete(slot)
 
     async def generate(self, department_id: UUID, payload: SlotGenerateRequestDTO) -> SlotGenerateResponseDTO:
+        # QUESTION: в какой момент должен отдаваться список услуг? это должен создавать руководитель? в момент GET запроса к списку услуг - должна обновляться база данных? тогда очень много запросов получается?
         department = await self.repository.get_department(department_id)
         if department is None:
             raise DepartmentNotFoundError

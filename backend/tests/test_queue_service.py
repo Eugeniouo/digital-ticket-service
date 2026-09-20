@@ -28,7 +28,7 @@ def service() -> tuple[WindowsService, Mock, Mock]:
     repository.ticket_exists_for_window = AsyncMock(return_value=False)
     repository.find_next_eligible_ticket = AsyncMock()
     repository.save = AsyncMock()
-    repository.get_in_progress_ticket_for_update = AsyncMock()
+    repository.get_in_progress_ticket_locked = AsyncMock()
 
     tickets = Mock(spec=TicketService)
     tickets.expire_web_noshows = AsyncMock()
@@ -235,7 +235,7 @@ async def test_requeue_uses_ticket_service(
     requeued = cast(Ticket, SimpleNamespace(id=ticket.id, status="queued"))
 
     repository.get_in_department.return_value = window
-    repository.get_in_progress_ticket_for_update.return_value = ticket
+    repository.get_in_progress_ticket_locked.return_value = ticket
     tickets.requeue.return_value = requeued
 
     result = await svc.requeue(department_id, window_id)
@@ -273,7 +273,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     requeued = cast(Ticket, SimpleNamespace(id=ticket.id, source=TicketSource.WALK_IN))
 
     repository.get_in_department.return_value = window
-    repository.get_in_progress_ticket_for_update.return_value = ticket
+    repository.get_in_progress_ticket_locked.return_value = ticket
 
     services = Mock()
     services.get_by_id = AsyncMock(
