@@ -40,3 +40,11 @@ class DuplicateWindowLabelError(Exception):
 
 class WindowHasActiveTicketError(Exception):
     """Window cannot be closed while a ticket is called or serving."""
+
+
+class WindowOccupiedError(Exception):
+    """Another operator already sits at this window."""
+
+
+class OperatorOnDifferentWindowError(Exception):
+    """Operator already sits at another window."""

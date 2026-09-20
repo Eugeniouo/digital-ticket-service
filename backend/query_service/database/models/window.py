@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from .department import Department
     from .service import Service
     from .slot import Slot
+    from .staff import Staff
     from .ticket import Ticket
 
 
@@ -75,12 +76,16 @@ class Window(Base):
         server_default=WindowStatus.CLOSED.value,
     )
 
-    # TODO: Operator table does not exist yet; create FK later
     current_operator_id: Mapped[UUID | None] = mapped_column(
-        Uuid(as_uuid=True),
+        ForeignKey("staff.id", ondelete="SET NULL"),
+        nullable=True,
     )
 
     department: Mapped[Department] = relationship(
+        back_populates="windows",
+    )
+
+    current_operator: Mapped[Staff | None] = relationship(
         back_populates="windows",
     )
 

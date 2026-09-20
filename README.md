@@ -13,7 +13,9 @@ To run the project use this set of commands:
 uv sync --locked
 uv run -m query_service
 ```
+
 Or with `just`:
+
 ```bash
 just run
 ```
@@ -22,7 +24,7 @@ This will start the server on the configured host.
 
 You can find swagger documentation at `/api/docs`.
 
-You can read more about uv here: https://docs.astral.sh/ruff/
+You can read more about uv here: [https://docs.astral.sh/ruff/](https://docs.astral.sh/ruff/)
 
 ## Docker
 
@@ -39,6 +41,8 @@ But you have to rebuild image every time you modify `uv.lock` or `pyproject.toml
 ```bash
 docker compose build
 ```
+
+
 
 ## Project structure
 
@@ -60,27 +64,31 @@ backend
     └── conftest.py      # Fixtures for all tests.
 ```
 
+
+
 ## Adding a feature
 
 Copy `backend/query_service/modules/dummy` as a template.
 
 1. Create `backend/query_service/modules/<feature>/` with:
-   * `schema.py` — request/response DTOs;
-   * `repository.py` — database access;
-   * `service.py` — business logic;
-   * `handler.py` — FastAPI router;
-   * optional `exceptions.py`.
+  - `schema.py` — request/response DTOs;
+  - `repository.py` — database access;
+  - `service.py` — business logic;
+  - `handler.py` — FastAPI router;
+  - optional `exceptions.py`.
 2. Add a SQLAlchemy model in `database/` and generate a migration if the table is new.
 3. Export `router` from the module `__init__.py`.
 4. Include it in `backend/query_service/api/router.py`.
 5. Add tests under `backend/tests/`.
 
+
+
 ## Configuration
 
 This application can be configured with environment variables.
 
-You can create `.env` file in the root directory and place all
-environment variables here. 
+Copy `.env.example` to `.env` in the repository root (`just env` does this if `.env` is missing)
+and edit the values. `.env` is gitignored. 
 
 All environment variables should start with "QUERY_SERVICE_" prefix.
 
@@ -89,18 +97,16 @@ For example if you see in your "backend/query_service/settings.py" a variable na
 variable to configure the value. This behaviour can be changed by overriding `env_prefix` property
 in `query_service.settings.Settings`.
 
-An example of .env file:
-```bash
-QUERY_SERVICE_RELOAD="True"
-QUERY_SERVICE_PORT="6969"
-QUERY_SERVICE_ENVIRONMENT="dev"
-```
+See `.env.example` for a starter file.
 
-You can read more about BaseSettings class here: https://pydantic-docs.helpmanual.io/usage/settings/
+Staff sign-in is `POST /api/auth/signin`. The migrator creates a `root` account when bootstrap username and password are set and that username does not exist yet.
+
+You can read more about BaseSettings class here: [https://pydantic-docs.helpmanual.io/usage/settings/](https://pydantic-docs.helpmanual.io/usage/settings/)
 
 ## Pre-commit
 
 To install pre-commit simply run inside the shell:
+
 ```bash
 pre-commit install
 ```
@@ -109,15 +115,16 @@ pre-commit is very useful to check your code before publishing it.
 It's configured using .pre-commit-config.yaml file.
 
 By default it runs:
-* mypy (validates types);
-* ruff (spots possible bugs);
 
+- mypy (validates types);
+- ruff (spots possible bugs);
 
-You can read more about pre-commit here: https://pre-commit.com/
+You can read more about pre-commit here: [https://pre-commit.com/](https://pre-commit.com/)
 
 ## Migrations
 
 If you want to migrate your database, you should run following commands:
+
 ```bash
 # To run all migrations until the migration with revision_id.
 alembic upgrade "<revision_id>"
@@ -126,9 +133,12 @@ alembic upgrade "<revision_id>"
 alembic upgrade "head"
 ```
 
+
+
 ### Reverting migrations
 
 If you want to revert migrations, you should run:
+
 ```bash
 # revert all migrations up to: revision_id.
 alembic downgrade <revision_id>
@@ -137,9 +147,12 @@ alembic downgrade <revision_id>
  alembic downgrade base
 ```
 
+
+
 ### Migration generation
 
 To generate migrations you should run:
+
 ```bash
 # For automatic change detection.
 alembic revision --autogenerate
@@ -147,6 +160,7 @@ alembic revision --autogenerate
 # For empty file generation.
 alembic revision
 ```
+
 
 
 ## Running tests
@@ -159,6 +173,7 @@ docker compose down
 ```
 
 For running tests on your local machine.
+
 1. you need to start all aux services.
 
 We can do so by using our `docker-compose.yaml` configuration. It already has everything we need.
@@ -167,7 +182,9 @@ We can do so by using our `docker-compose.yaml` configuration. It already has ev
 docker compose up -d --wait db
 ```
 
-2. Run tests.
+1. Run tests.
+
 ```bash
 pytest -vv .
 ```
+

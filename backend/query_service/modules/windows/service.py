@@ -17,12 +17,14 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoCalledTicketError,
     NoTicketInProgressError,
+    OperatorOnDifferentWindowError,
     ServiceNotInDepartmentError,
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasActiveTicketError,
     WindowHasNoServicesError,
     WindowNotFoundError,
+    WindowOccupiedError,
 )
 from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.schema import (
@@ -43,6 +45,7 @@ def window_to_dto(window: Window) -> WindowDTO:
         label=window.label,
         status=window.status,
         service_ids=[service.id for service in window.services],
+        current_operator_id=window.current_operator_id,
     )
 
 
@@ -99,6 +102,7 @@ class WindowsService:
         department_id: UUID,
         window_id: UUID,
         payload: WindowUpdateRequestDTO,
+        operator_id: UUID,
     ) -> WindowDTO:
         # Lock window before close check so call-next cannot sneak an active ticket in
         window = await self.repository.get_in_department_locked(department_id, window_id)
@@ -114,10 +118,29 @@ class WindowsService:
             if services is None:
                 raise ServiceNotInDepartmentError
 
+        set_operator = False
+        current_operator_id: UUID | None = None
+        if payload.status == WindowStatus.CLOSED:
+            set_operator = True
+            current_operator_id = None
+
+        elif payload.status == WindowStatus.OPEN:
+            if window.current_operator_id is not None and window.current_operator_id != operator_id:
+                raise WindowOccupiedError
+
+            window_seated_at = await self.repository.get_by_operator(operator_id)
+            if window_seated_at is not None and window_seated_at.id != window.id:
+                raise OperatorOnDifferentWindowError
+
+            set_operator = True
+            current_operator_id = operator_id
+
         await self.repository.update(
             window,
             status=payload.status,
             services=services,
+            set_operator=set_operator,
+            current_operator_id=current_operator_id,
         )
 
         return window_to_dto(window)

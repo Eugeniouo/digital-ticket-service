@@ -11,16 +11,27 @@ up:
 down:
     docker compose down -v
 
+env:
+    test -f .env || cp .env.example .env
+
+bootstrap:
+    just env
+    uv run -m query_service.bootstrap_staff
+
 run:
+    just env
     just up
     uv run alembic upgrade head
+    just bootstrap
     just serve
 
 
 fresh:
+    just env
     just down
     just up
     uv run alembic upgrade head
+    just bootstrap
 
 
 generate_migrations message:

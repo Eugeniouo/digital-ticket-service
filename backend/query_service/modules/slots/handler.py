@@ -3,6 +3,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from query_service.database.models.staff import Staff
+from query_service.modules.auth.dependencies import require_admin
 from query_service.modules.slots.exceptions import (
     DepartmentNotFoundError,
     DuplicateSlotError,
@@ -82,6 +84,7 @@ async def create_slot(
     department_id: UUID,
     payload: SlotCreateRequestDTO,
     svc: SlotsService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> SlotDTO:
     try:
         return await svc.create_slot(department_id, payload)
@@ -122,6 +125,7 @@ async def update_slot(
     slot_id: UUID,
     payload: SlotUpdateRequestDTO,
     svc: SlotsService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> SlotDTO:
     try:
         return await svc.update_slot(department_id, slot_id, payload)
@@ -149,6 +153,7 @@ async def delete_slot(
     department_id: UUID,
     slot_id: UUID,
     svc: SlotsService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> None:
     try:
         await svc.delete_slot(department_id, slot_id)
@@ -177,6 +182,7 @@ async def generate_slots(
     department_id: UUID,
     payload: SlotGenerateRequestDTO,
     svc: SlotsService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> SlotGenerateResponseDTO:
     try:
         return await svc.generate(department_id, payload)
