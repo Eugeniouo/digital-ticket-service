@@ -1,3 +1,7 @@
+class DepartmentNotFoundError(Exception):
+    """Department does not exist."""
+
+
 class TicketNotFoundError(Exception):
     """Ticket does not exist."""
 

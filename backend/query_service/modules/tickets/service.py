@@ -10,6 +10,7 @@ from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.slots.repository import SlotsRepository
 from query_service.modules.tickets.exceptions import (
+    DepartmentNotFoundError,
     InactiveServiceError,
     InvalidTicketStateError,
     MissingSlotIdError,
@@ -109,6 +110,15 @@ class TicketService:
         created_ticket = await self.repository.create(ticket_data)
 
         return TicketResponse.model_validate(created_ticket)
+
+    async def list_incomplete(self, department_id: UUID) -> list[TicketResponse]:
+        department = await self.repository.get_department(department_id)
+        if department is None:
+            raise DepartmentNotFoundError
+
+        tickets = await self.repository.list_incomplete(department_id)
+
+        return [TicketResponse.model_validate(ticket) for ticket in tickets]
 
     async def get_ticket_info(self, department_id: UUID, ticket_id: UUID) -> TicketResponse:
         await self.expire_web_noshows(department_id)

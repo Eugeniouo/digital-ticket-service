@@ -4,9 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import TicketSource
-from query_service.modules.auth.dependencies import get_optional_staff
+from query_service.modules.auth.dependencies import get_optional_staff, require_admin
 from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.tickets.exceptions import (
+    DepartmentNotFoundError,
     InactiveServiceError,
     InvalidTicketStateError,
     MissingSlotIdError,
@@ -19,7 +20,7 @@ from query_service.modules.tickets.exceptions import (
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
 from query_service.modules.tickets.service import TicketService
 
-router = APIRouter(tags=["Tickets"])
+router = APIRouter()
 
 
 def _ensure_walk_in_operator(
@@ -103,6 +104,24 @@ async def create_ticket(
             status_code=status.HTTP_409_CONFLICT,
             detail="Slot has no remaining capacity",
         ) from exc
+
+
+@router.get(
+    "/incomplete",
+    response_model=list[TicketResponse],
+    responses={404: {"description": "Department not found"}},
+    summary="List incomplete tickets",
+)
+async def list_incomplete_tickets(
+    department_id: UUID,
+    svc: TicketService = Depends(),
+    _staff: Staff = Depends(require_admin),
+) -> list[TicketResponse]:
+    try:
+        return await svc.list_incomplete(department_id)
+
+    except DepartmentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found") from exc
 
 
 @router.get(
