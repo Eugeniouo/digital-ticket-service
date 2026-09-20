@@ -87,6 +87,21 @@ class TicketRepository:
 
         return await self.session.scalar(stmt) or 0
 
+    async def list_eligible_queued(self, department_id: UUID, service_ids: list[UUID]) -> list[Ticket]:
+        """Load eligible QUEUED tickets for the given services in this department."""
+        if not service_ids:
+            return []
+        now_seconds = now_priority_seconds()
+        result = await self.session.scalars(
+            select(Ticket).where(
+                Ticket.department_id == department_id,
+                Ticket.status == TicketStatus.QUEUED,
+                Ticket.service_id.in_(service_ids),
+                queue_eligible_sql(now_seconds),
+            ),
+        )
+        return list(result.all())
+
     async def get_next_ticket_number(self, department_id: UUID, prefix: str) -> int:
         """
         Атомарно получает следующий номер талона для конкретного отделения, дня и префикса.

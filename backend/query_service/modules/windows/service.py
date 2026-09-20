@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -5,6 +6,7 @@ from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
+from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.tickets.exceptions import InactiveServiceError
 from query_service.modules.tickets.priority import compute_priority_key, now_in_queue_tz
@@ -29,6 +31,8 @@ from query_service.modules.windows.schema import (
     WindowRedirectRequestDTO,
     WindowUpdateRequestDTO,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def window_to_dto(window: Window) -> WindowDTO:
@@ -56,10 +60,12 @@ class WindowsService:
         repository: WindowsRepository = Depends(),
         tickets: TicketService = Depends(),
         services: ServiceRepository = Depends(),
+        notifications: NotificationService = Depends(),
     ) -> None:
         self.repository = repository
         self.tickets = tickets
         self.services = services
+        self.notifications = notifications
 
     async def list_windows(self, department_id: UUID) -> list[WindowDTO]:
         department = await self.repository.get_department(department_id)
@@ -147,7 +153,18 @@ class WindowsService:
         ticket.called_at = datetime.now(UTC)
         await self.repository.save()
 
+        await self._enqueue_after_call(ticket, locked)
+
         return ticket
+
+    async def _enqueue_after_call(self, ticket: Ticket, window: Window) -> None:
+        try:
+            await self.notifications.enqueue_called(ticket, window)
+
+            service_ids = [service.id for service in window.services]
+            await self.notifications.enqueue_approaching_for_services(window.department_id, service_ids)
+        except Exception:
+            logger.exception("notification enqueue failed")
 
     async def start(self, department_id: UUID, window_id: UUID) -> Ticket:
         window = await self.repository.get_in_department(department_id, window_id)

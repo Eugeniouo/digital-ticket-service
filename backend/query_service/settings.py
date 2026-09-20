@@ -1,4 +1,4 @@
-import enum
+from enum import StrEnum
 from pathlib import Path
 from tempfile import gettempdir
 
@@ -8,15 +8,17 @@ from yarl import URL
 TEMP_DIR = Path(gettempdir())
 
 
-class LogLevel(enum.StrEnum):
-    """Possible log levels."""
-
+class LogLevel(StrEnum):
     NOTSET = "NOTSET"
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
     ERROR = "ERROR"
     FATAL = "FATAL"
+
+
+class AdapterType(StrEnum):
+    DEMO = "demo"
 
 
 class Settings(BaseSettings):
@@ -38,6 +40,7 @@ class Settings(BaseSettings):
     environment: str = "dev"
 
     log_level: LogLevel = LogLevel.INFO
+
     # Variables for the database
     db_host: str = "localhost"
     db_port: int = 5432
@@ -54,6 +57,15 @@ class Settings(BaseSettings):
     queue_max_wait_web: int = 900
     queue_max_wait_qr: int = 1200
     queue_max_wait_walk_in: int = 1200
+
+    # Notifications
+    notify_adapter: str = AdapterType.DEMO
+    notify_timeout_seconds: float = 2.0
+    notify_poll_interval_seconds: float = 2.0
+    notify_max_attempts: int = 5
+    notify_approaching_ahead: int = 2
+    notify_force_failure: bool = False
+    celery_broker_url: str = "redis://localhost:6379/0"
 
     @property
     def db_url(self) -> URL:

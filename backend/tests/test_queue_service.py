@@ -35,9 +35,14 @@ def service() -> tuple[WindowsService, Mock, Mock]:
     tickets.requeue = AsyncMock()
     tickets.release_slot = AsyncMock()
 
+    notifications = Mock()
+    notifications.enqueue_called = AsyncMock()
+    notifications.enqueue_approaching_for_services = AsyncMock()
+
     svc = WindowsService(
         repository=cast(WindowsRepository, repository),
         tickets=cast(TicketService, tickets),
+        notifications=notifications,
     )
 
     return svc, repository, tickets
@@ -77,6 +82,42 @@ async def test_call_next_returns_next_ticket(
     repository.get_in_department.assert_awaited_once_with(department_id, window_id)
     tickets.expire_web_noshows.assert_awaited_once_with(department_id)
     repository.find_next_eligible_ticket.assert_awaited_once_with(window, [service_id])
+    repository.save.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_call_next_succeeds_when_notification_enqueue_fails(
+    service: tuple[WindowsService, Mock, Mock],
+) -> None:
+    svc, repository, _tickets = service
+
+    department_id = uuid4()
+    window_id = uuid4()
+    service_id = uuid4()
+
+    window = cast(
+        Window,
+        SimpleNamespace(
+            id=window_id,
+            department_id=department_id,
+            status=WindowStatus.OPEN,
+            services=[SimpleNamespace(id=service_id)],
+        ),
+    )
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(id=uuid4(), status=TicketStatus.QUEUED, window_id=None, called_at=None),
+    )
+
+    repository.get_in_department.return_value = window
+    repository.lock_window.return_value = window
+    repository.find_next_eligible_ticket.return_value = ticket
+    cast(Mock, svc.notifications).enqueue_called.side_effect = RuntimeError("outbox unavailable")
+
+    result = await svc.call_next(department_id, window_id)
+
+    assert result is ticket
+    assert ticket.status == TicketStatus.CALLED
     repository.save.assert_awaited_once()
 
 
