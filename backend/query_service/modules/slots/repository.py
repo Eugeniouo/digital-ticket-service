@@ -144,7 +144,7 @@ class SlotsRepository:
         await self.session.delete(slot)
         await self.session.flush()
 
-    async def flush(self) -> None:
+    async def save(self) -> None:
         await self.session.flush()
 
     async def try_increment_booked(self, slot_id: UUID) -> bool:

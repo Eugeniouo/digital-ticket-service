@@ -26,7 +26,7 @@ class WindowsRepository:
     def __init__(self, session: AsyncSession = Depends(get_db_session)) -> None:
         self.session = session
 
-    async def flush(self) -> None:
+    async def save(self) -> None:
         await self.session.flush()
 
     async def get_department(self, department_id: UUID) -> Department | None:

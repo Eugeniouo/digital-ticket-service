@@ -49,5 +49,5 @@ class ServiceRepository:
         await self.session.flush()
         return service
 
-    async def flush(self) -> None:
+    async def save(self) -> None:
         await self.session.flush()

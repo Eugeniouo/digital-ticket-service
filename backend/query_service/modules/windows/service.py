@@ -143,7 +143,7 @@ class WindowsService:
         ticket.status = TicketStatus.CALLED
         ticket.window_id = locked.id
         ticket.called_at = datetime.now(UTC)
-        await self.repository.flush()
+        await self.repository.save()
 
         return ticket
 
@@ -158,7 +158,7 @@ class WindowsService:
 
         ticket.status = TicketStatus.SERVING
         ticket.started_at = datetime.now(UTC)
-        await self.repository.flush()
+        await self.repository.save()
 
         return ticket
 
@@ -173,7 +173,7 @@ class WindowsService:
 
         ticket.status = TicketStatus.COMPLETED
         ticket.completed_at = datetime.now(UTC)
-        await self.repository.flush()
+        await self.repository.save()
 
         return ticket
 

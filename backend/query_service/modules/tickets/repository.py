@@ -22,12 +22,8 @@ class TicketRepository:
     def __init__(self, session: AsyncSession = Depends(get_db_session)) -> None:
         self.session = session
 
-    async def flush(self) -> None:
+    async def save(self) -> None:
         await self.session.flush()
-
-    async def refresh(self, ticket: Ticket) -> Ticket:
-        await self.session.refresh(ticket)
-        return ticket
 
     async def create(self, ticket: Ticket) -> Ticket:
         self.session.add(ticket)

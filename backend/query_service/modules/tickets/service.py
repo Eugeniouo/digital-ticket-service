@@ -55,7 +55,7 @@ class TicketService:
             if ticket.slot_id is not None:
                 slot_ids.append(ticket.slot_id)
 
-        await self.repository.flush()
+        await self.repository.save()
 
         for slot_id in slot_ids:
             await self.release_slot(slot_id)
@@ -71,7 +71,7 @@ class TicketService:
         ticket.started_at = None
         ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
 
-        await self.repository.flush()
+        await self.repository.save()
         return ticket
 
     def _get_category_prefix(self, service_name: str) -> str:
@@ -176,8 +176,7 @@ class TicketService:
         slot_id = ticket.slot_id
         ticket.status = TicketStatus.CANCELED
         ticket.canceled_at = datetime.now(UTC)
-        await self.repository.flush()
-        await self.repository.refresh(ticket)
+        await self.repository.save()
 
         await self.release_slot(slot_id)
 

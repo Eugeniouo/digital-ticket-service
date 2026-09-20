@@ -27,7 +27,7 @@ def call_next_service() -> tuple[WindowsService, Mock, Mock]:
     repository.lock_window = AsyncMock()
     repository.ticket_exists_for_window = AsyncMock(return_value=False)
     repository.find_next_eligible_ticket = AsyncMock()
-    repository.flush = AsyncMock()
+    repository.save = AsyncMock()
 
     tickets = Mock(spec=TicketService)
     tickets.expire_web_noshows = AsyncMock()
@@ -71,7 +71,7 @@ async def test_call_next_raises_when_window_disappeared_after_lock(
         await svc.call_next(open_window.department_id, open_window.id)
 
     tickets.expire_web_noshows.assert_awaited_once()
-    repository.flush.assert_not_awaited()
+    repository.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -95,7 +95,7 @@ async def test_call_next_rechecks_window_status_after_lock(
     with pytest.raises(WindowClosedError):
         await svc.call_next(open_window.department_id, open_window.id)
 
-    repository.flush.assert_not_awaited()
+    repository.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_call_next_rejects_active_ticket(
     with pytest.raises(TicketAlreadyInProgressError):
         await svc.call_next(open_window.department_id, open_window.id)
 
-    repository.flush.assert_not_awaited()
+    repository.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -138,7 +138,7 @@ async def test_call_next_rejects_window_without_services(
     with pytest.raises(WindowHasNoServicesError):
         await svc.call_next(empty_window.department_id, empty_window.id)
 
-    repository.flush.assert_not_awaited()
+    repository.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -155,7 +155,7 @@ async def test_call_next_raises_when_no_matching_ticket_exists(
     with pytest.raises(EmptyQueueError):
         await svc.call_next(open_window.department_id, open_window.id)
 
-    repository.flush.assert_not_awaited()
+    repository.save.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -186,4 +186,4 @@ async def test_call_next_marks_selected_ticket_as_called(
     assert ticket.window_id == open_window.id
     assert ticket.called_at is not None
     assert ticket.called_at.tzinfo == UTC
-    repository.flush.assert_awaited_once()
+    repository.save.assert_awaited_once()

@@ -27,7 +27,7 @@ def service() -> tuple[WindowsService, Mock, Mock]:
     repository.lock_window = AsyncMock()
     repository.ticket_exists_for_window = AsyncMock(return_value=False)
     repository.find_next_eligible_ticket = AsyncMock()
-    repository.flush = AsyncMock()
+    repository.save = AsyncMock()
     repository.get_in_progress_ticket_for_update = AsyncMock()
 
     tickets = Mock(spec=TicketService)
@@ -77,7 +77,7 @@ async def test_call_next_returns_next_ticket(
     repository.get_in_department.assert_awaited_once_with(department_id, window_id)
     tickets.expire_web_noshows.assert_awaited_once_with(department_id)
     repository.find_next_eligible_ticket.assert_awaited_once_with(window, [service_id])
-    repository.flush.assert_awaited_once()
+    repository.save.assert_awaited_once()
 
 
 @pytest.mark.asyncio

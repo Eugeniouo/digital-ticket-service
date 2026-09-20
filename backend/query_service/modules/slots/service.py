@@ -128,7 +128,7 @@ class SlotsService:
             raise InvalidCapacityError
 
         slot.capacity = payload.capacity
-        await self.repository.flush()
+        await self.repository.save()
         return slot_to_dto(slot)
 
     async def delete_slot(self, department_id: UUID, slot_id: UUID) -> None:
