@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -9,7 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from query_service.database.dependencies import get_db_session
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
-from query_service.modules.tickets.exceptions import InvalidTicketStateError, TicketNotFoundError
 from query_service.modules.tickets.priority import (
     now_in_queue_tz,
     now_priority_seconds,
@@ -24,6 +22,13 @@ class TicketRepository:
     def __init__(self, session: AsyncSession = Depends(get_db_session)) -> None:
         self.session = session
 
+    async def flush(self) -> None:
+        await self.session.flush()
+
+    async def refresh(self, ticket: Ticket) -> Ticket:
+        await self.session.refresh(ticket)
+        return ticket
+
     async def create(self, ticket: Ticket) -> Ticket:
         self.session.add(ticket)
         await self.session.flush()
@@ -37,34 +42,11 @@ class TicketRepository:
     async def get_by_id_for_update(self, ticket_id: UUID) -> Ticket | None:
         return await self.session.scalar(select(Ticket).where(Ticket.id == ticket_id).with_for_update())
 
-    async def update_status(self, ticket_id: UUID, status: TicketStatus) -> Ticket:
-        ticket = await self.get_by_id(ticket_id)
-
-        if not ticket:
-            raise TicketNotFoundError
-
-        ticket.status = status
-
-        now = datetime.now(UTC)
-        if status == TicketStatus.CANCELED:
-            ticket.canceled_at = now
-        elif status == TicketStatus.CALLED:
-            ticket.called_at = now
-        elif status == TicketStatus.SERVING:
-            ticket.started_at = now
-        elif status == TicketStatus.COMPLETED:
-            ticket.completed_at = now
-
-        await self.session.flush()
-        await self.session.refresh(ticket)
-
-        return ticket
-
-    async def expire_web_noshows(self, department_id: UUID) -> list[UUID]:
-        """Cancel QUEUED WEB tickets past no-show. Returns slot_ids to free."""
+    async def lock_web_noshows(self, department_id: UUID) -> list[Ticket]:
+        """Lock QUEUED WEB tickets past no-show for this department."""
         now_seconds = now_priority_seconds()
 
-        tickets = list(
+        return list(
             await self.session.scalars(
                 select(Ticket)
                 .where(
@@ -75,20 +57,6 @@ class TicketRepository:
                 .with_for_update(skip_locked=True),
             ),
         )
-        if not tickets:
-            return []
-
-        now = datetime.now(UTC)
-        slot_ids: list[UUID] = []
-        for ticket in tickets:
-            ticket.status = TicketStatus.CANCELED
-            ticket.canceled_at = now
-            if ticket.slot_id is not None:
-                slot_ids.append(ticket.slot_id)
-
-        await self.session.flush()
-
-        return slot_ids
 
     async def count_tickets_before(self, target_ticket: Ticket) -> int:
         """
@@ -149,20 +117,3 @@ class TicketRepository:
         await self.session.flush()
 
         return result.scalar_one()
-
-    async def requeue_ticket(self, ticket: Ticket, elapsed_seconds: int = 0) -> Ticket:
-        """Возврат в QUEUED. Клиент не теряет место, a сдвигается вперед на потраченное время.
-
-        Caller must hold the ticket row locked (FOR UPDATE).
-        """
-        if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
-            raise InvalidTicketStateError
-
-        ticket.status = TicketStatus.QUEUED
-        ticket.window_id = None
-        ticket.called_at = None
-        ticket.started_at = None
-        ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
-
-        await self.session.flush()
-        return ticket

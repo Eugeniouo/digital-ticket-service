@@ -3,7 +3,7 @@ from uuid import UUID
 
 from fastapi import Depends
 
-from query_service.database.models.ticket import Ticket, TicketSource
+from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.tickets.exceptions import InactiveServiceError
@@ -16,7 +16,10 @@ from query_service.modules.windows.exceptions import (
     NoCalledTicketError,
     NoTicketInProgressError,
     ServiceNotInDepartmentError,
+    TicketAlreadyInProgressError,
+    WindowClosedError,
     WindowHasActiveTicketError,
+    WindowHasNoServicesError,
     WindowNotFoundError,
 )
 from query_service.modules.windows.repository import WindowsRepository
@@ -73,12 +76,16 @@ class WindowsService:
         if await self.repository.label_exists(department_id, payload.label):
             raise DuplicateWindowLabelError
 
+        services = await self.repository.resolve_services_in_department(department_id, payload.service_ids)
+        if services is None:
+            raise ServiceNotInDepartmentError
+
         window = Window(
             department_id=department_id,
             label=payload.label,
             status=WindowStatus.CLOSED,
         )
-        await self.repository.add(window, payload.service_ids)
+        await self.repository.add(window, services)
         return window_to_dto(window)
 
     async def update_window(
@@ -95,10 +102,16 @@ class WindowsService:
         if payload.status == WindowStatus.CLOSED and await self.repository.ticket_exists_for_window(window.id):
             raise WindowHasActiveTicketError
 
+        services = None
+        if payload.service_ids is not None:
+            services = await self.repository.resolve_services_in_department(department_id, payload.service_ids)
+            if services is None:
+                raise ServiceNotInDepartmentError
+
         await self.repository.update(
             window,
             status=payload.status,
-            service_ids=payload.service_ids,
+            services=services,
         )
 
         return window_to_dto(window)
@@ -110,10 +123,27 @@ class WindowsService:
 
         await self.tickets.expire_web_noshows(department_id)
 
-        # OPEN / empty-services / in-progress re-checked under FOR UPDATE in assign_next_ticket
-        ticket = await self.repository.assign_next_ticket(window)
+        # Re-lock and re-check OPEN (close ↔ call-next race)
+        locked = await self.repository.lock_window(window.id)
+        if locked is None:
+            raise EmptyQueueError
+        if locked.status != WindowStatus.OPEN:
+            raise WindowClosedError
+        if await self.repository.ticket_exists_for_window(locked.id):
+            raise TicketAlreadyInProgressError
+
+        service_ids = [service.id for service in locked.services]
+        if not service_ids:
+            raise WindowHasNoServicesError
+
+        ticket = await self.repository.find_next_eligible_ticket(locked, service_ids)
         if ticket is None:
             raise EmptyQueueError
+
+        ticket.status = TicketStatus.CALLED
+        ticket.window_id = locked.id
+        ticket.called_at = datetime.now(UTC)
+        await self.repository.flush()
 
         return ticket
 
@@ -122,9 +152,13 @@ class WindowsService:
         if window is None:
             raise WindowNotFoundError
 
-        ticket = await self.repository.start_current_ticket(window)
+        ticket = await self.repository.get_called_ticket_for_update(window)
         if ticket is None:
             raise NoCalledTicketError
+
+        ticket.status = TicketStatus.SERVING
+        ticket.started_at = datetime.now(UTC)
+        await self.repository.flush()
 
         return ticket
 
@@ -133,9 +167,13 @@ class WindowsService:
         if window is None:
             raise WindowNotFoundError
 
-        ticket = await self.repository.complete_current_ticket(window)
+        ticket = await self.repository.get_in_progress_ticket_for_update(window)
         if ticket is None:
             raise NoTicketInProgressError
+
+        ticket.status = TicketStatus.COMPLETED
+        ticket.completed_at = datetime.now(UTC)
+        await self.repository.flush()
 
         return ticket
 

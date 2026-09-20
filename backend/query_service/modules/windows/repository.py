@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -19,19 +18,16 @@ from query_service.modules.tickets.priority import (
     queue_eligible_sql,
     ticket_matches_window_sql,
 )
-from query_service.modules.windows.exceptions import (
-    ServiceNotInDepartmentError,
-    TicketAlreadyInProgressError,
-    WindowClosedError,
-    WindowHasNoServicesError,
-)
 
 
 class WindowsRepository:
-    """Database access for windows, their services, and queue assignment."""
+    """Database access for windows, their services, and queue queries."""
 
     def __init__(self, session: AsyncSession = Depends(get_db_session)) -> None:
         self.session = session
+
+    async def flush(self) -> None:
+        await self.session.flush()
 
     async def get_department(self, department_id: UUID) -> Department | None:
         return await self.session.get(Department, department_id)
@@ -58,15 +54,50 @@ class WindowsRepository:
             .with_for_update(),
         )
 
+    async def lock_window(self, window_id: UUID) -> Window | None:
+        return await self.session.scalar(
+            select(Window).where(Window.id == window_id).options(selectinload(Window.services)).with_for_update(),
+        )
+
     async def label_exists(self, department_id: UUID, label: str) -> bool:
         window_id = await self.session.scalar(
             select(Window.id).where(Window.department_id == department_id, Window.label == label),
         )
         return window_id is not None
 
-    async def add(self, window: Window, service_ids: list[UUID]) -> Window:
+    async def resolve_services_in_department(
+        self,
+        department_id: UUID,
+        service_ids: list[UUID],
+    ) -> list[Service] | None:
+        """Load services by id in department order. None if any id is missing."""
+        unique_ids = list(dict.fromkeys(service_ids))
+        if not unique_ids:
+            return []
+
+        services = list(
+            await self.session.scalars(
+                select(Service).where(
+                    Service.id.in_(unique_ids),
+                    Service.department_id == department_id,
+                ),
+            ),
+        )
+        if len(services) != len(unique_ids):
+            return None
+
+        by_id = {service.id: service for service in services}
+        return [by_id[service_id] for service_id in unique_ids]
+
+    async def set_services(self, window: Window, services: list[Service]) -> None:
+        # TODO: выглядит как костыль
+        if "services" not in instance_state(window).dict:
+            set_committed_value(window, "services", [])
+        window.services = services
+
+    async def add(self, window: Window, services: list[Service]) -> Window:
         self.session.add(window)
-        await self.replace_services(window, service_ids)
+        await self.set_services(window, services)
         await self.session.flush()
         return window
 
@@ -75,36 +106,14 @@ class WindowsRepository:
         window: Window,
         *,
         status: WindowStatus | None = None,
-        service_ids: list[UUID] | None = None,
+        services: list[Service] | None = None,
     ) -> Window:
         if status is not None:
             window.status = status
-        if service_ids is not None:
-            await self.replace_services(window, service_ids)
+        if services is not None:
+            await self.set_services(window, services)
         await self.session.flush()
         return window
-
-    async def replace_services(self, window: Window, service_ids: list[UUID]) -> None:
-        unique_ids = list(dict.fromkeys(service_ids))
-        new_services: list[Service] = []
-        if unique_ids:
-            services = list(
-                await self.session.scalars(
-                    select(Service).where(
-                        Service.id.in_(unique_ids),
-                        Service.department_id == window.department_id,
-                    ),
-                ),
-            )
-            if len(services) != len(unique_ids):
-                raise ServiceNotInDepartmentError
-            by_id = {service.id: service for service in services}
-            new_services = [by_id[service_id] for service_id in unique_ids]
-
-        # TODO: выглядит как костыль
-        if "services" not in instance_state(window).dict:
-            set_committed_value(window, "services", [])
-        window.services = new_services
 
     async def ticket_exists_for_window(self, window_id: UUID) -> bool:
         ticket_id = await self.session.scalar(
@@ -115,56 +124,26 @@ class WindowsRepository:
         )
         return ticket_id is not None
 
-    async def assign_next_ticket(self, window: Window) -> Ticket | None:
-        # Lock full window row; re-check OPEN after lock (close ↔ call-next race)
-        locked = await self.session.scalar(
-            select(Window).where(Window.id == window.id).options(selectinload(Window.services)).with_for_update(),
-        )
-        if locked is None:
-            return None
-        if locked.status != WindowStatus.OPEN:
-            raise WindowClosedError
-
-        in_progress = await self.session.scalar(
-            select(Ticket.id).where(
-                Ticket.window_id == locked.id,
-                Ticket.status.in_((TicketStatus.CALLED, TicketStatus.SERVING)),
-            ),
-        )
-        if in_progress is not None:
-            raise TicketAlreadyInProgressError
-
-        service_ids = [service.id for service in locked.services]
-        if not service_ids:
-            raise WindowHasNoServicesError
-
+    async def find_next_eligible_ticket(self, window: Window, service_ids: list[UUID]) -> Ticket | None:
+        """Select next QUEUED ticket for this window. Caller must hold the window lock."""
         now_seconds = now_priority_seconds()
         eligible = queue_eligible_sql(now_seconds)
         overdue_live = overdue_live_sql(now_seconds)
 
-        ticket = await self.session.scalar(
+        return await self.session.scalar(
             select(Ticket)
             .outerjoin(Slot, Ticket.slot_id == Slot.id)
             .where(
-                Ticket.department_id == locked.department_id,
+                Ticket.department_id == window.department_id,
                 Ticket.status == TicketStatus.QUEUED,
                 Ticket.service_id.in_(service_ids),
                 eligible,
-                ticket_matches_window_sql(locked.id),
+                ticket_matches_window_sql(window.id),
             )
             .order_by(overdue_live.asc(), Ticket.priority_key.asc(), Ticket.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True, of=Ticket),
         )
-        if ticket is None:
-            return None
-
-        ticket.status = TicketStatus.CALLED
-        ticket.window_id = locked.id
-        ticket.called_at = datetime.now(UTC)
-        await self.session.flush()
-
-        return ticket
 
     async def get_in_progress_ticket_for_update(self, window: Window) -> Ticket | None:
         return await self.session.scalar(
@@ -178,8 +157,8 @@ class WindowsRepository:
             .with_for_update(),
         )
 
-    async def start_current_ticket(self, window: Window) -> Ticket | None:
-        ticket = await self.session.scalar(
+    async def get_called_ticket_for_update(self, window: Window) -> Ticket | None:
+        return await self.session.scalar(
             select(Ticket)
             .where(
                 Ticket.window_id == window.id,
@@ -189,22 +168,3 @@ class WindowsRepository:
             .limit(1)
             .with_for_update(),
         )
-        if ticket is None:
-            return None
-
-        ticket.status = TicketStatus.SERVING
-        ticket.started_at = datetime.now(UTC)
-        await self.session.flush()
-
-        return ticket
-
-    async def complete_current_ticket(self, window: Window) -> Ticket | None:
-        ticket = await self.get_in_progress_ticket_for_update(window)
-        if ticket is None:
-            return None
-
-        ticket.status = TicketStatus.COMPLETED
-        ticket.completed_at = datetime.now(UTC)
-        await self.session.flush()
-
-        return ticket

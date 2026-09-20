@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -43,14 +43,36 @@ class TicketService:
             await self.slots_repo.try_decrement_booked(slot_id)
 
     async def expire_web_noshows(self, department_id: UUID) -> None:
-        slot_ids = await self.repository.expire_web_noshows(department_id)
+        tickets = await self.repository.lock_web_noshows(department_id)
+        if not tickets:
+            return
+
+        now = datetime.now(UTC)
+        slot_ids: list[UUID] = []
+        for ticket in tickets:
+            ticket.status = TicketStatus.CANCELED
+            ticket.canceled_at = now
+            if ticket.slot_id is not None:
+                slot_ids.append(ticket.slot_id)
+
+        await self.repository.flush()
 
         for slot_id in slot_ids:
             await self.release_slot(slot_id)
 
     async def requeue(self, ticket: Ticket, elapsed_seconds: int = 0) -> Ticket:
         """Return CALLED/SERVING ticket to QUEUED. Caller must hold FOR UPDATE."""
-        return await self.repository.requeue_ticket(ticket, elapsed_seconds)
+        if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
+            raise InvalidTicketStateError
+
+        ticket.status = TicketStatus.QUEUED
+        ticket.window_id = None
+        ticket.called_at = None
+        ticket.started_at = None
+        ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
+
+        await self.repository.flush()
+        return ticket
 
     def _get_category_prefix(self, service_name: str) -> str:
         """Determines the ticket prefix based on the service name."""
@@ -152,8 +174,11 @@ class TicketService:
             raise InvalidTicketStateError
 
         slot_id = ticket.slot_id
-        updated_ticket = await self.repository.update_status(ticket_id, TicketStatus.CANCELED)
+        ticket.status = TicketStatus.CANCELED
+        ticket.canceled_at = datetime.now(UTC)
+        await self.repository.flush()
+        await self.repository.refresh(ticket)
 
         await self.release_slot(slot_id)
 
-        return TicketResponse.model_validate(updated_ticket)
+        return TicketResponse.model_validate(ticket)
