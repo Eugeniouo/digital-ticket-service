@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
+from query_service.database.models.ticket_status_history import TicketStatusHistory
 from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.exceptions import SlotNotFoundError
@@ -26,8 +27,8 @@ from query_service.modules.tickets.priority import (
     is_queue_eligible,
     now_in_queue_tz,
 )
-from query_service.modules.tickets.repository import TicketRepository
-from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
+from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
+from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse, TicketStatusHistoryResponse
 from query_service.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -208,3 +209,41 @@ class TicketService:
 
         await self.repository.save()
         return ticket
+
+
+class TicketStatusHistoryService:
+    def __init__(
+        self,
+        history_repo: TicketStatusHistoryRepository = Depends(),
+        ticket_repo: TicketRepository = Depends(),
+    ) -> None:
+        self.history_repo = history_repo
+        self.ticket_repo = ticket_repo
+
+    async def get_history(self, department_id: UUID, ticket_id: UUID) -> list[TicketStatusHistoryResponse]:
+        ticket = await self.ticket_repo.get_by_id(ticket_id)
+
+        if not ticket or ticket.department_id != department_id:
+            raise TicketNotFoundError
+
+        history = await self.history_repo.list_by_ticket_id(ticket_id)
+
+        return [TicketStatusHistoryResponse.model_validate(h) for h in history]
+
+    async def _record_status_change(
+        self,
+        ticket: Ticket,
+        old_status: TicketStatus | None,
+        new_status: TicketStatus,
+        note: str | None = None,
+    ) -> None:
+        if old_status == new_status:
+            return
+
+        history = TicketStatusHistory(
+            ticket_id=ticket.id,
+            old_status=old_status,
+            new_status=new_status,
+            note=note,
+        )
+        await self.history_repo.create(history)

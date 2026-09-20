@@ -35,3 +35,14 @@ class TicketCreateRequest(BaseModel):
     service_id: UUID
     source: TicketSource
     slot_id: UUID | None = None
+
+
+class TicketStatusHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ticket_id: UUID
+    old_status: TicketStatus | None
+    new_status: TicketStatus
+    changed_at: datetime
+    note: str | None = None

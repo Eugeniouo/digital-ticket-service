@@ -17,8 +17,8 @@ from query_service.modules.tickets.exceptions import (
     TicketNotFoundError,
     UnexpectedSlotIdError,
 )
-from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
-from query_service.modules.tickets.service import TicketService
+from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse, TicketStatusHistoryResponse
+from query_service.modules.tickets.service import TicketService, TicketStatusHistoryService
 
 router = APIRouter()
 
@@ -182,4 +182,26 @@ async def cancel_ticket(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ticket is not queued and cannot be canceled",
+        ) from exc
+
+
+@router.get(
+    "/{ticket_id}/status-history",
+    response_model=list[TicketStatusHistoryResponse],
+    responses={
+        404: {"description": "Ticket not found in this department"},
+    },
+    summary="Get ticket status history",
+)
+async def get_ticket_status_history(
+    department_id: UUID,
+    ticket_id: UUID,
+    svc: TicketStatusHistoryService = Depends(),
+) -> list[TicketStatusHistoryResponse]:
+    try:
+        return await svc.get_history(department_id, ticket_id)
+    except TicketNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ticket not found in this department",
         ) from exc
