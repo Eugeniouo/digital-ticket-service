@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, Mock
 from uuid import UUID, uuid4
 
 import pytest
-from query_service.database.models.ticket import Ticket
-from query_service.database.models.window import Window
+from query_service.database.models.ticket import Ticket, TicketStatus
+from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
     EmptyQueueError,
@@ -24,10 +24,16 @@ from query_service.modules.windows.service import WindowsService
 def service() -> tuple[WindowsService, Mock, Mock]:
     repository = Mock(spec=WindowsRepository)
     repository.get_in_department = AsyncMock()
-    repository.assign_next_ticket = AsyncMock()
+    repository.lock_window = AsyncMock()
+    repository.ticket_exists_for_window = AsyncMock(return_value=False)
+    repository.find_next_eligible_ticket = AsyncMock()
+    repository.save = AsyncMock()
+    repository.get_in_progress_ticket_locked = AsyncMock()
 
     tickets = Mock(spec=TicketService)
     tickets.expire_web_noshows = AsyncMock()
+    tickets.requeue = AsyncMock()
+    tickets.release_slot = AsyncMock()
 
     svc = WindowsService(
         repository=cast(WindowsRepository, repository),
@@ -45,27 +51,33 @@ async def test_call_next_returns_next_ticket(
 
     department_id = uuid4()
     window_id = uuid4()
+    service_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id))
-    ticket = cast(Ticket, SimpleNamespace(id=uuid4()))
+    window = cast(
+        Window,
+        SimpleNamespace(
+            id=window_id,
+            department_id=department_id,
+            status=WindowStatus.OPEN,
+            services=[SimpleNamespace(id=service_id)],
+        ),
+    )
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(id=uuid4(), status=TicketStatus.QUEUED, window_id=None, called_at=None),
+    )
 
     repository.get_in_department.return_value = window
-    repository.assign_next_ticket.return_value = ticket
+    repository.lock_window.return_value = window
+    repository.find_next_eligible_ticket.return_value = ticket
 
     result = await svc.call_next(department_id, window_id)
 
     assert result is ticket
-
-    repository.get_in_department.assert_awaited_once_with(
-        department_id,
-        window_id,
-    )
-    tickets.expire_web_noshows.assert_awaited_once_with(
-        department_id,
-    )
-    repository.assign_next_ticket.assert_awaited_once_with(
-        window,
-    )
+    repository.get_in_department.assert_awaited_once_with(department_id, window_id)
+    tickets.expire_web_noshows.assert_awaited_once_with(department_id)
+    repository.find_next_eligible_ticket.assert_awaited_once_with(window, [service_id])
+    repository.save.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -83,7 +95,7 @@ async def test_call_next_raises_when_window_not_found(
         await svc.call_next(department_id, window_id)
 
     tickets.expire_web_noshows.assert_not_awaited()
-    repository.assign_next_ticket.assert_not_awaited()
+    repository.lock_window.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -94,51 +106,71 @@ async def test_call_next_raises_when_queue_is_empty(
 
     department_id = uuid4()
     window_id = uuid4()
+    service_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id))
+    window = cast(
+        Window,
+        SimpleNamespace(
+            id=window_id,
+            department_id=department_id,
+            status=WindowStatus.OPEN,
+            services=[SimpleNamespace(id=service_id)],
+        ),
+    )
 
     repository.get_in_department.return_value = window
-    repository.assign_next_ticket.return_value = None
+    repository.lock_window.return_value = window
+    repository.find_next_eligible_ticket.return_value = None
 
     with pytest.raises(EmptyQueueError):
         await svc.call_next(department_id, window_id)
 
-    tickets.expire_web_noshows.assert_awaited_once_with(
-        department_id,
-    )
-    repository.assign_next_ticket.assert_awaited_once_with(
-        window,
-    )
+    tickets.expire_web_noshows.assert_awaited_once_with(department_id)
+    repository.find_next_eligible_ticket.assert_awaited_once_with(window, [service_id])
 
 
 @pytest.mark.parametrize(
-    "repository_error",
+    ("setup", "error"),
     [
-        WindowClosedError,
-        WindowHasNoServicesError,
-        TicketAlreadyInProgressError,
+        ("closed", WindowClosedError),
+        ("no_services", WindowHasNoServicesError),
+        ("in_progress", TicketAlreadyInProgressError),
     ],
 )
 @pytest.mark.asyncio
-async def test_call_next_propagates_repository_errors(
+async def test_call_next_raises_guard_errors(
     service: tuple[WindowsService, Mock, Mock],
-    repository_error: type[Exception],
+    setup: str,
+    error: type[Exception],
 ) -> None:
     svc, repository, tickets = service
 
     department_id = uuid4()
     window_id = uuid4()
+    service_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id))
+    services = [] if setup == "no_services" else [SimpleNamespace(id=service_id)]
+    status = WindowStatus.CLOSED if setup == "closed" else WindowStatus.OPEN
+
+    window = cast(
+        Window,
+        SimpleNamespace(
+            id=window_id,
+            department_id=department_id,
+            status=status,
+            services=services,
+        ),
+    )
 
     repository.get_in_department.return_value = window
-    repository.assign_next_ticket.side_effect = repository_error()
+    repository.lock_window.return_value = window
+    repository.ticket_exists_for_window.return_value = setup == "in_progress"
 
-    with pytest.raises(repository_error):
+    with pytest.raises(error):
         await svc.call_next(department_id, window_id)
 
     tickets.expire_web_noshows.assert_awaited_once_with(department_id)
-    repository.assign_next_ticket.assert_awaited_once_with(window)
+    repository.find_next_eligible_ticket.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -149,26 +181,117 @@ async def test_call_next_expires_web_no_shows_before_assigning_ticket(
 
     department_id = uuid4()
     window_id = uuid4()
+    service_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id))
-    ticket = cast(Ticket, SimpleNamespace(id=uuid4()))
+    window = cast(
+        Window,
+        SimpleNamespace(
+            id=window_id,
+            department_id=department_id,
+            status=WindowStatus.OPEN,
+            services=[SimpleNamespace(id=service_id)],
+        ),
+    )
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(id=uuid4(), status=TicketStatus.QUEUED, window_id=None, called_at=None),
+    )
 
     repository.get_in_department.return_value = window
-    repository.assign_next_ticket.return_value = ticket
+    repository.lock_window.return_value = window
+    repository.find_next_eligible_ticket.return_value = ticket
 
     call_order: list[str] = []
 
     async def expire_web_noshows(department_id: UUID) -> None:
         call_order.append("expire")
 
-    async def assign_next_ticket(current_window: Window) -> Ticket:
+    async def find_next_eligible_ticket(current_window: Window, service_ids: list[UUID]) -> Ticket:
         call_order.append("assign")
         return ticket
 
     tickets.expire_web_noshows.side_effect = expire_web_noshows
-    repository.assign_next_ticket.side_effect = assign_next_ticket
+    repository.find_next_eligible_ticket.side_effect = find_next_eligible_ticket
 
     result = await svc.call_next(department_id, window_id)
 
     assert result is ticket
     assert call_order == ["expire", "assign"]
+
+
+@pytest.mark.asyncio
+async def test_requeue_uses_ticket_service(
+    service: tuple[WindowsService, Mock, Mock],
+) -> None:
+    svc, repository, tickets = service
+
+    department_id = uuid4()
+    window_id = uuid4()
+    window = cast(Window, SimpleNamespace(id=window_id))
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(id=uuid4(), called_at=None),
+    )
+    requeued = cast(Ticket, SimpleNamespace(id=ticket.id, status="queued"))
+
+    repository.get_in_department.return_value = window
+    repository.get_in_progress_ticket_locked.return_value = ticket
+    tickets.requeue.return_value = requeued
+
+    result = await svc.requeue(department_id, window_id)
+
+    assert result is requeued
+    tickets.requeue.assert_awaited_once_with(ticket, 0)
+
+
+@pytest.mark.asyncio
+async def test_redirect_converts_to_walk_in_and_releases_slot(
+    service: tuple[WindowsService, Mock, Mock],
+) -> None:
+    from query_service.database.models.ticket import TicketSource
+    from query_service.modules.windows.schema import WindowRedirectRequestDTO
+
+    svc, repository, tickets = service
+
+    department_id = uuid4()
+    window_id = uuid4()
+    service_id = uuid4()
+    slot_id = uuid4()
+
+    window = cast(Window, SimpleNamespace(id=window_id))
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(
+            id=uuid4(),
+            called_at=None,
+            slot_id=slot_id,
+            service_id=uuid4(),
+            source=TicketSource.WEB,
+            priority_key=1000,
+        ),
+    )
+    requeued = cast(Ticket, SimpleNamespace(id=ticket.id, source=TicketSource.WALK_IN))
+
+    repository.get_in_department.return_value = window
+    repository.get_in_progress_ticket_locked.return_value = ticket
+
+    services = Mock()
+    services.get_by_id = AsyncMock(
+        return_value=SimpleNamespace(id=service_id, department_id=department_id, is_active=True),
+    )
+    svc.services = services
+
+    tickets.requeue.return_value = requeued
+
+    result = await svc.redirect(
+        department_id,
+        window_id,
+        WindowRedirectRequestDTO(service_id=service_id),
+    )
+
+    assert result is requeued
+    assert ticket.service_id == service_id
+    assert ticket.slot_id is None
+    assert ticket.source == TicketSource.WALK_IN
+    tickets.requeue.assert_awaited_once()
+    tickets.release_slot.assert_awaited_once_with(slot_id)

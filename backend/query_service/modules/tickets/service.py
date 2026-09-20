@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
@@ -15,6 +15,7 @@ from query_service.modules.tickets.exceptions import (
     SlotFullError,
     SlotServiceMismatchError,
     TicketNotFoundError,
+    UnexpectedSlotIdError,
 )
 from query_service.modules.tickets.priority import (
     QUEUE_TIMEZONE,
@@ -36,12 +37,6 @@ class TicketService:
         self.repository = repository
         self.service_repo = service_repo
         self.slots_repo = slots_repo
-
-    async def expire_web_noshows(self, department_id: UUID) -> None:
-        slot_ids = await self.repository.expire_web_noshows(department_id)
-
-        for slot_id in slot_ids:
-            await self.slots_repo.try_decrement_booked(slot_id)
 
     def _get_category_prefix(self, service_name: str) -> str:
         """Determines the ticket prefix based on the service name."""
@@ -67,24 +62,26 @@ class TicketService:
             raise InactiveServiceError
         if request.source == TicketSource.WEB and not request.slot_id:
             raise MissingSlotIdError
+        if request.source != TicketSource.WEB and request.slot_id is not None:
+            raise UnexpectedSlotIdError
 
         effective_start = now_in_queue_tz()
+        slot_id: UUID | None = None
 
         if request.source == TicketSource.WEB and request.slot_id is not None:
             slot = await self.slots_repo.get_slot_in_department(department_id, request.slot_id)
 
             if slot is None:
                 raise SlotNotFoundError
-
             if slot.service_id != request.service_id:
                 raise SlotServiceMismatchError
-
             reserved = await self.slots_repo.try_increment_booked(request.slot_id)
             if not reserved:
                 raise SlotFullError
 
             # slot_date/slot_time are wall-clock in queue timezone (Europe/Moscow by default)
             effective_start = datetime.combine(slot.slot_date, slot.slot_time, tzinfo=QUEUE_TIMEZONE)
+            slot_id = request.slot_id
 
         priority_key = compute_priority_key(request.source, effective_start)
 
@@ -95,7 +92,7 @@ class TicketService:
         ticket_data = Ticket(
             department_id=department_id,
             service_id=request.service_id,
-            slot_id=request.slot_id,
+            slot_id=slot_id,
             source=request.source,
             priority_key=priority_key,
             ticket_label=ticket_label,
@@ -114,13 +111,14 @@ class TicketService:
 
         estimated_wait_minutes = 0
 
-        # ETA only for live-eligible QUEUED tickets; same service + order as assign_next
+        # Compute Estimated Time of Arrival
         if ticket.status == TicketStatus.QUEUED and is_queue_eligible(ticket.source, ticket.priority_key):
             tickets_ahead = await self.repository.count_tickets_before(ticket)
 
             service = await self.service_repo.get_by_id(ticket.service_id)
             avg_service_time = service.duration_time if service else 10
 
+            # maybe we should divide by amount of open windows in parallel? not that critical, requires a lot of changes then
             estimated_wait_minutes = tickets_ahead * avg_service_time
 
         response_data = TicketResponse.model_validate(ticket)
@@ -129,19 +127,57 @@ class TicketService:
         return response_data
 
     async def cancel_ticket(self, department_id: UUID, ticket_id: UUID) -> TicketResponse:
-        ticket = await self.repository.get_by_id_for_update(ticket_id)
+        ticket = await self.repository.get_by_id_locked(ticket_id)
 
         if not ticket or ticket.department_id != department_id:
             raise TicketNotFoundError
 
-        # Only QUEUED: refuse if already called/serving (avoids race with call-next)
+        # CALLED / SERVING do their own thing, so for now we just avoid race conditions and cancel only queued types.
         if ticket.status != TicketStatus.QUEUED:
             raise InvalidTicketStateError
 
         slot_id = ticket.slot_id
-        updated_ticket = await self.repository.update_status(ticket_id, TicketStatus.CANCELED)
+        ticket.status = TicketStatus.CANCELED
+        ticket.canceled_at = datetime.now(UTC)
+        await self.repository.save()
 
+        await self.release_slot(slot_id)
+
+        return TicketResponse.model_validate(ticket)
+
+    async def release_slot(self, slot_id: UUID | None) -> None:
+        """Release booked slots."""
         if slot_id is not None:
             await self.slots_repo.try_decrement_booked(slot_id)
 
-        return TicketResponse.model_validate(updated_ticket)
+    async def expire_web_noshows(self, department_id: UUID) -> None:
+        tickets = await self.repository.select_locked_web_noshows(department_id)
+        if not tickets:
+            return
+
+        now = datetime.now(UTC)
+        slot_ids: list[UUID] = []
+        for ticket in tickets:
+            ticket.status = TicketStatus.CANCELED
+            ticket.canceled_at = now
+            if ticket.slot_id is not None:
+                slot_ids.append(ticket.slot_id)
+
+        await self.repository.save()
+
+        for slot_id in slot_ids:
+            await self.release_slot(slot_id)
+
+    async def requeue(self, ticket: Ticket, elapsed_seconds: int = 0) -> Ticket:
+        """Return CALLED/SERVING ticket to QUEUED. Caller must hold FOR UPDATE."""
+        if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
+            raise InvalidTicketStateError
+
+        ticket.status = TicketStatus.QUEUED
+        ticket.window_id = None
+        ticket.called_at = None
+        ticket.started_at = None
+        ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
+
+        await self.repository.save()
+        return ticket

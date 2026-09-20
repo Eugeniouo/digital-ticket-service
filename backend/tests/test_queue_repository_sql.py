@@ -10,14 +10,31 @@ from query_service.database.models.service import Service
 from query_service.database.models.slot import Slot
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
+from query_service.modules.services.repository import ServiceRepository
+from query_service.modules.slots.repository import SlotsRepository
 from query_service.modules.tickets.priority import (
     BONUS_SECONDS,
     MAX_WAIT_SECONDS,
     now_priority_seconds,
 )
-from query_service.modules.windows.exceptions import TicketAlreadyInProgressError
+from query_service.modules.tickets.repository import TicketRepository
+from query_service.modules.tickets.service import TicketService
+from query_service.modules.windows.exceptions import EmptyQueueError, TicketAlreadyInProgressError
 from query_service.modules.windows.repository import WindowsRepository
+from query_service.modules.windows.service import WindowsService
 from sqlalchemy.ext.asyncio import AsyncSession
+
+
+def make_windows_service(dbsession: AsyncSession) -> WindowsService:
+    return WindowsService(
+        repository=WindowsRepository(dbsession),
+        tickets=TicketService(
+            repository=TicketRepository(dbsession),
+            service_repo=ServiceRepository(dbsession),
+            slots_repo=SlotsRepository(dbsession),
+        ),
+        services=ServiceRepository(dbsession),
+    )
 
 
 @dataclass(frozen=True)
@@ -148,9 +165,9 @@ async def test_assign_next_ticket_chooses_lowest_priority_key(
     dbsession.add_all([worse, better])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.ticket_label == "better-priority"
@@ -194,9 +211,9 @@ async def test_assign_next_ticket_uses_created_at_as_tie_breaker(
     dbsession.add_all([newer, older])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == older.id
@@ -226,9 +243,9 @@ async def test_assign_next_ticket_accepts_live_ticket_sources(
     dbsession.add(ticket)
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == ticket.id
@@ -263,9 +280,9 @@ async def test_assign_next_ticket_ignores_wrong_service(
     dbsession.add_all([wrong_service, correct_service])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == correct_service.id
@@ -303,9 +320,9 @@ async def test_assign_next_ticket_ignores_other_department(
     dbsession.add_all([wrong_department, correct_department])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == correct_department.id
@@ -358,9 +375,9 @@ async def test_assign_next_ticket_ignores_ticket_for_another_window_slot(
     dbsession.add_all([wrong_window, no_slot])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == no_slot.id
@@ -402,9 +419,9 @@ async def test_assign_next_ticket_ignores_non_queued_ticket(
     dbsession.add_all([non_queued, queued])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == queued.id
@@ -437,9 +454,9 @@ async def test_assign_next_ticket_accepts_due_web_ticket(
     dbsession.add(ticket)
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == ticket.id
@@ -469,12 +486,12 @@ async def test_assign_next_ticket_rejects_web_noshow(
     dbsession.add(ticket)
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    with pytest.raises(EmptyQueueError):
+        await service.call_next(queue_context.department.id, queue_context.window.id)
 
-    assert selected is None
-    assert ticket.status == TicketStatus.QUEUED
+    assert ticket.status == TicketStatus.CANCELED
 
 
 async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
@@ -517,14 +534,13 @@ async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
     dbsession.add_all([wrong_service, expired_web, completed])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
-
-    assert selected is None
+    with pytest.raises(EmptyQueueError):
+        await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert wrong_service.status == TicketStatus.QUEUED
-    assert expired_web.status == TicketStatus.QUEUED
+    assert expired_web.status == TicketStatus.CANCELED
     assert completed.status == TicketStatus.COMPLETED
 
 
@@ -555,15 +571,15 @@ async def test_assign_next_ticket_rejects_second_call_while_ticket_is_active(
     dbsession.add_all([first, second])
     await dbsession.flush()
 
-    repository = WindowsRepository(dbsession)
+    service = make_windows_service(dbsession)
 
-    selected = await repository.assign_next_ticket(queue_context.window)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert selected is not None
     assert selected.id == first.id
 
     with pytest.raises(TicketAlreadyInProgressError):
-        await repository.assign_next_ticket(queue_context.window)
+        await service.call_next(queue_context.department.id, queue_context.window.id)
 
     assert first.status == TicketStatus.CALLED
     assert second.status == TicketStatus.QUEUED

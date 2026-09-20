@@ -71,5 +71,5 @@ class ServicesService:
         if payload.is_active is not None:
             service.is_active = payload.is_active
 
-        await self.repository.flush()
+        await self.repository.save()
         return service_to_dto(service)
