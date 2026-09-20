@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import UTC, datetime, timedelta
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from query_service.database.models.notification_outbox import NotificationOutbox, NotificationOutboxStatus
@@ -29,11 +30,15 @@ async def deliver_row(
 ) -> None:
     """Send one outbox row and update status. Caller holds the row lock."""
     now = datetime.now(UTC)
-    # TODO: Validate payload inside try. A bad row must be marked FAILED so the rest of the batch can proceed.
-    message = NotificationMessage.model_validate(row.payload)
 
     try:
+        message = NotificationMessage.model_validate(row.payload)
         await asyncio.wait_for(adapter.send(message), timeout=timeout_seconds)
+    except ValidationError as exc:
+        row.attempts += 1
+        row.last_error = str(exc)
+        row.status = NotificationOutboxStatus.FAILED
+        return
     except TimeoutError:
         _mark_attempt(row, now, max_attempts, "timeout")
         return
