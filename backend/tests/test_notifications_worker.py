@@ -85,3 +85,22 @@ async def test_deliver_row_marks_timeout() -> None:
     assert row.attempts == 1
     assert row.last_error == "timeout"
     assert row.next_attempt_at > datetime.now(UTC)
+
+
+@pytest.mark.asyncio
+async def test_deliver_row_marks_invalid_payload_failed() -> None:
+    row = _pending_row()
+    row.payload = {"ticket_label": "A1"}
+    send_called = False
+
+    async def send(_message: NotificationMessage) -> None:
+        nonlocal send_called
+        send_called = True
+
+    await deliver_row(row, SimpleNamespace(send=send), timeout_seconds=1.0, max_attempts=5)
+
+    assert send_called is False
+    assert row.status == NotificationOutboxStatus.FAILED
+    assert row.attempts == 1
+    assert row.sent_at is None
+    assert row.last_error is not None
