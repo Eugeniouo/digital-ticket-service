@@ -101,17 +101,24 @@ class WindowsRepository:
         await self.session.flush()
         return window
 
+    async def get_by_operator(self, operator_id: UUID) -> Window | None:
+        return await self.session.scalar(select(Window).where(Window.current_operator_id == operator_id))
+
     async def update(
         self,
         window: Window,
         *,
         status: WindowStatus | None = None,
         services: list[Service] | None = None,
+        set_operator: bool = False,
+        current_operator_id: UUID | None = None,
     ) -> Window:
         if status is not None:
             window.status = status
         if services is not None:
             await self.set_services(window, services)
+        if set_operator:
+            window.current_operator_id = current_operator_id
         await self.session.flush()
         return window
 

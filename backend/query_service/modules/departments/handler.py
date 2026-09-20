@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from query_service.database.models.department import Department
+from query_service.database.models.staff import Staff
+from query_service.modules.auth.dependencies import require_root
 from query_service.modules.departments.exceptions import DepartmentNotFoundError
 from query_service.modules.departments.schema import DepartmentCreateRequestDTO, DepartmentDTO
 from query_service.modules.departments.service import DepartmentService
@@ -20,6 +22,7 @@ async def get_departments(svc: DepartmentService = Depends()) -> list[Department
 async def create_department(
     payload: DepartmentCreateRequestDTO,
     svc: DepartmentService = Depends(),
+    _staff: Staff = Depends(require_root),
 ) -> Department:
     return await svc.create(payload)
 

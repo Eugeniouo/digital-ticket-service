@@ -2,6 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from query_service.database.models.staff import Staff
+from query_service.modules.auth.dependencies import require_admin, require_department_staff, require_operator
 from query_service.modules.tickets.exceptions import InactiveServiceError, InvalidTicketStateError
 from query_service.modules.tickets.schema import TicketResponse
 from query_service.modules.windows.exceptions import (
@@ -10,12 +12,14 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoCalledTicketError,
     NoTicketInProgressError,
+    OperatorOnDifferentWindowError,
     ServiceNotInDepartmentError,
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasActiveTicketError,
     WindowHasNoServicesError,
     WindowNotFoundError,
+    WindowOccupiedError,
 )
 from query_service.modules.windows.schema import (
     WindowCreateRequestDTO,
@@ -32,6 +36,7 @@ router = APIRouter()
 async def list_windows(
     department_id: UUID,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_department_staff),
 ) -> list[WindowDTO]:
     try:
         return await svc.list_windows(department_id)
@@ -54,6 +59,7 @@ async def create_window(
     department_id: UUID,
     payload: WindowCreateRequestDTO,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> WindowDTO:
     try:
         return await svc.create_window(department_id, payload)
@@ -79,7 +85,7 @@ async def create_window(
     response_model=WindowDTO,
     responses={
         404: {"description": "Window not found in this department"},
-        409: {"description": "Window has an active ticket and cannot be closed"},
+        409: {"description": "Window has an active ticket, is occupied, or operator already sits elsewhere"},
     },
 )
 async def update_window(
@@ -87,9 +93,10 @@ async def update_window(
     window_id: UUID,
     payload: WindowUpdateRequestDTO,
     svc: WindowsService = Depends(),
+    staff: Staff = Depends(require_operator),
 ) -> WindowDTO:
     try:
-        return await svc.update_window(department_id, window_id, payload)
+        return await svc.update_window(department_id, window_id, payload, operator_id=staff.id)
 
     except WindowNotFoundError as exc:
         raise HTTPException(
@@ -109,6 +116,18 @@ async def update_window(
             detail="Window has an active ticket and cannot be closed",
         ) from exc
 
+    except WindowOccupiedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Window is already occupied by another operator",
+        ) from exc
+
+    except OperatorOnDifferentWindowError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Operator already sits at another window",
+        ) from exc
+
 
 @router.post(
     "/{window_id}:call-next",
@@ -124,6 +143,7 @@ async def call_next(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
         return TicketResponse.model_validate(await svc.call_next(department_id, window_id))
@@ -168,6 +188,7 @@ async def start(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
         return TicketResponse.model_validate(await svc.start(department_id, window_id))
@@ -197,6 +218,7 @@ async def complete(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
         return TicketResponse.model_validate(await svc.complete(department_id, window_id))
@@ -226,6 +248,7 @@ async def requeue(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
         return TicketResponse.model_validate(await svc.requeue(department_id, window_id))
@@ -257,6 +280,7 @@ async def redirect(
     window_id: UUID,
     payload: WindowRedirectRequestDTO,
     svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
         return TicketResponse.model_validate(await svc.redirect(department_id, window_id, payload))

@@ -94,7 +94,12 @@ An example of .env file:
 QUERY_SERVICE_RELOAD="True"
 QUERY_SERVICE_PORT="6969"
 QUERY_SERVICE_ENVIRONMENT="dev"
+QUERY_SERVICE_JWT_SECRET="change-me"
+QUERY_SERVICE_BOOTSTRAP_USERNAME="root"
+QUERY_SERVICE_BOOTSTRAP_PASSWORD="change-me"
 ```
+
+Staff sign-in is `POST /api/auth/signin`. The migrator creates a `root` account when bootstrap username and password are set and that username does not exist yet.
 
 You can read more about BaseSettings class here: https://pydantic-docs.helpmanual.io/usage/settings/
 

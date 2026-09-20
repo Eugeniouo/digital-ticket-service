@@ -15,6 +15,7 @@ class WindowDTO(BaseModel):
     label: str
     status: WindowStatus
     service_ids: list[UUID]
+    current_operator_id: UUID | None = None
 
 
 class WindowCreateRequestDTO(BaseModel):

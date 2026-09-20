@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     notify_force_failure: bool = False
     celery_broker_url: str = "redis://localhost:6379/0"
 
+    jwt_secret: str = ""
+    jwt_ttl_seconds: int = 43200  # 12 hours
+    bootstrap_username: str = ""
+    bootstrap_password: str = ""
+
     @property
     def db_url(self) -> URL:
         """

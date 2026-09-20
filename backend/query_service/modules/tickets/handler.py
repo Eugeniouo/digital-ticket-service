@@ -2,6 +2,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from query_service.database.models.staff import Staff, StaffRole
+from query_service.database.models.ticket import TicketSource
+from query_service.modules.auth.dependencies import get_optional_staff
 from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.tickets.exceptions import (
     InactiveServiceError,
@@ -19,6 +22,19 @@ from query_service.modules.tickets.service import TicketService
 router = APIRouter(tags=["Tickets"])
 
 
+def _ensure_walk_in_operator(
+    department_id: UUID,
+    payload: TicketCreateRequest,
+    staff: Staff | None,
+) -> None:
+    if payload.source != TicketSource.WALK_IN:
+        return
+    if staff is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    if staff.role != StaffRole.OPERATOR or staff.department_id != department_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+
 @router.post(
     "",
     response_model=TicketResponse,
@@ -34,12 +50,15 @@ async def create_ticket(
     department_id: UUID,
     payload: TicketCreateRequest,
     svc: TicketService = Depends(),
+    staff: Staff | None = Depends(get_optional_staff),
 ) -> TicketResponse:
     """
     Issue a new ticket for a specific service.
     Supports generation via QR code, Walk-In, or Web (Appointment).
     If the source is 'web', providing a valid slot_id is mandatory.
     """
+    _ensure_walk_in_operator(department_id, payload, staff)
+
     try:
         return await svc.issue_ticket(department_id, payload)
 

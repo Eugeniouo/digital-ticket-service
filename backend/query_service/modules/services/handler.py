@@ -2,6 +2,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from query_service.database.models.staff import Staff
+from query_service.modules.auth.dependencies import require_admin
 from query_service.modules.services.exceptions import DepartmentNotFoundError, ServiceNotFoundError
 from query_service.modules.services.schema import (
     ServiceCreateRequestDTO,
@@ -21,6 +23,7 @@ router = APIRouter()
 async def list_services(
     department_id: UUID,
     svc: ServicesService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> list[ServiceDTO]:
     try:
         return await svc.list_services(department_id)
@@ -72,6 +75,7 @@ async def create_service(
     department_id: UUID,
     payload: ServiceCreateRequestDTO,
     svc: ServicesService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> ServiceDTO:
     try:
         return await svc.create_service(department_id, payload)
@@ -89,6 +93,7 @@ async def update_service(
     service_id: UUID,
     payload: ServiceUpdateRequestDTO,
     svc: ServicesService = Depends(),
+    _staff: Staff = Depends(require_admin),
 ) -> ServiceDTO:
     try:
         return await svc.update_service(department_id, service_id, payload)
