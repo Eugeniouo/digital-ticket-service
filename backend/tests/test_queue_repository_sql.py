@@ -10,6 +10,8 @@ from query_service.database.models.service import Service
 from query_service.database.models.slot import Slot
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
+from query_service.modules.notifications.repository import NotificationRepository
+from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.repository import SlotsRepository
 from query_service.modules.tickets.priority import (
@@ -26,14 +28,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def make_windows_service(dbsession: AsyncSession) -> WindowsService:
+    ticket_repo = TicketRepository(dbsession)
+    notifications = NotificationService(
+        repository=NotificationRepository(dbsession),
+        tickets=ticket_repo,
+    )
+
     return WindowsService(
         repository=WindowsRepository(dbsession),
         tickets=TicketService(
-            repository=TicketRepository(dbsession),
+            repository=ticket_repo,
             service_repo=ServiceRepository(dbsession),
             slots_repo=SlotsRepository(dbsession),
+            notifications=notifications,
         ),
         services=ServiceRepository(dbsession),
+        notifications=notifications,
     )
 
 

@@ -54,6 +54,60 @@ services:
       db:
         condition: service_healthy
 
+  valkey:
+    image: valkey/valkey:8
+    hostname: query-service-valkey
+    ports:
+      - "6379:6379"
+    restart: always
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 40
+
+  celery_worker:
+    <<: *main_app
+    ports: []
+    command: celery -A query_service.celery_app worker -l INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      QUERY_SERVICE_HOST: 0.0.0.0
+      QUERY_SERVICE_RELOAD: "True"
+      QUERY_SERVICE_DB_HOST: query-service-db
+      QUERY_SERVICE_DB_PORT: 5432
+      QUERY_SERVICE_DB_USER: query_service
+      QUERY_SERVICE_DB_PASS: query_service
+      QUERY_SERVICE_DB_BASE: query_service
+      QUERY_SERVICE_CELERY_BROKER_URL: redis://query-service-valkey:6379/0
+
+  celery_beat:
+    <<: *main_app
+    ports: []
+    command: celery -A query_service.celery_app beat -l INFO --schedule /tmp/celerybeat-schedule
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    environment:
+      QUERY_SERVICE_HOST: 0.0.0.0
+      QUERY_SERVICE_RELOAD: "True"
+      QUERY_SERVICE_DB_HOST: query-service-db
+      QUERY_SERVICE_DB_PORT: 5432
+      QUERY_SERVICE_DB_USER: query_service
+      QUERY_SERVICE_DB_PASS: query_service
+      QUERY_SERVICE_DB_BASE: query_service
+      QUERY_SERVICE_CELERY_BROKER_URL: redis://query-service-valkey:6379/0
+
 volumes:
   query-service-db-data:
     name: query-service-db-data

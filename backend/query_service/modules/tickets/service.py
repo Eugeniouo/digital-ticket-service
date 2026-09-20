@@ -1,9 +1,11 @@
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
+from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.slots.repository import SlotsRepository
@@ -25,6 +27,9 @@ from query_service.modules.tickets.priority import (
 )
 from query_service.modules.tickets.repository import TicketRepository
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
+from query_service.settings import settings
+
+logger = logging.getLogger(__name__)
 
 
 class TicketService:
@@ -33,10 +38,13 @@ class TicketService:
         repository: TicketRepository = Depends(),
         service_repo: ServiceRepository = Depends(),
         slots_repo: SlotsRepository = Depends(),
+        notifications: NotificationService = Depends(),
     ) -> None:
         self.repository = repository
+        # TODO: we should not import repositories from other services directly - it can avoid necessary business logic
         self.service_repo = service_repo
         self.slots_repo = slots_repo
+        self.notifications = notifications
 
     def _get_category_prefix(self, service_name: str) -> str:
         """Determines the ticket prefix based on the service name."""
@@ -121,10 +129,19 @@ class TicketService:
             # maybe we should divide by amount of open windows in parallel? not that critical, requires a lot of changes then
             estimated_wait_minutes = tickets_ahead * avg_service_time
 
+            if tickets_ahead <= settings.notify_approaching_ahead:
+                await self._enqueue_approaching(ticket, estimated_wait_minutes)
+
         response_data = TicketResponse.model_validate(ticket)
         response_data.estimated_wait_time = estimated_wait_minutes
 
         return response_data
+
+    async def _enqueue_approaching(self, ticket: Ticket, estimated_wait_time: int) -> None:
+        try:
+            await self.notifications.enqueue_approaching(ticket, estimated_wait_time)
+        except Exception:
+            logger.exception("notification enqueue failed")
 
     async def cancel_ticket(self, department_id: UUID, ticket_id: UUID) -> TicketResponse:
         ticket = await self.repository.get_by_id_locked(ticket_id)
