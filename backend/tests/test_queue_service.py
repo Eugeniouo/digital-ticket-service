@@ -172,3 +172,82 @@ async def test_call_next_expires_web_no_shows_before_assigning_ticket(
 
     assert result is ticket
     assert call_order == ["expire", "assign"]
+
+
+@pytest.mark.asyncio
+async def test_requeue_uses_ticket_service(
+    service: tuple[WindowsService, Mock, Mock],
+) -> None:
+    svc, repository, tickets = service
+
+    department_id = uuid4()
+    window_id = uuid4()
+    window = cast(Window, SimpleNamespace(id=window_id))
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(id=uuid4(), called_at=None),
+    )
+    requeued = cast(Ticket, SimpleNamespace(id=ticket.id, status="queued"))
+
+    repository.get_in_department.return_value = window
+    repository.get_in_progress_ticket_for_update = AsyncMock(return_value=ticket)
+    tickets.requeue = AsyncMock(return_value=requeued)
+
+    result = await svc.requeue(department_id, window_id)
+
+    assert result is requeued
+    tickets.requeue.assert_awaited_once_with(ticket, 0)
+
+
+@pytest.mark.asyncio
+async def test_redirect_converts_to_walk_in_and_releases_slot(
+    service: tuple[WindowsService, Mock, Mock],
+) -> None:
+    from query_service.database.models.ticket import TicketSource
+    from query_service.modules.windows.schema import WindowRedirectRequestDTO
+
+    svc, repository, tickets = service
+
+    department_id = uuid4()
+    window_id = uuid4()
+    service_id = uuid4()
+    slot_id = uuid4()
+
+    window = cast(Window, SimpleNamespace(id=window_id))
+    ticket = cast(
+        Ticket,
+        SimpleNamespace(
+            id=uuid4(),
+            called_at=None,
+            slot_id=slot_id,
+            service_id=uuid4(),
+            source=TicketSource.WEB,
+            priority_key=1000,
+        ),
+    )
+    requeued = cast(Ticket, SimpleNamespace(id=ticket.id, source=TicketSource.WALK_IN))
+
+    repository.get_in_department.return_value = window
+    repository.get_in_progress_ticket_for_update = AsyncMock(return_value=ticket)
+
+    services = Mock()
+    services.get_by_id = AsyncMock(
+        return_value=SimpleNamespace(id=service_id, department_id=department_id, is_active=True),
+    )
+    svc.services = services
+
+    tickets.requeue = AsyncMock(return_value=requeued)
+    tickets.release_slot = AsyncMock()
+
+    result = await svc.redirect(
+        department_id,
+        window_id,
+        WindowRedirectRequestDTO(service_id=service_id),
+    )
+
+    assert result is requeued
+    assert ticket.service_id == service_id
+    assert ticket.slot_id is None
+    assert ticket.source == TicketSource.WALK_IN
+    tickets.requeue.assert_awaited_once()
+    tickets.release_slot.assert_awaited_once_with(slot_id)

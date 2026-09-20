@@ -1,9 +1,11 @@
 from datetime import UTC, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, case, or_
 from sqlalchemy.sql.elements import ColumnElement
 
+from query_service.database.models.slot import Slot
 from query_service.database.models.ticket import Ticket, TicketSource
 from query_service.settings import settings
 
@@ -124,3 +126,11 @@ def overdue_live_sql(now_seconds: int) -> ColumnElement[int]:
         ),
         else_=1,
     )
+
+
+def ticket_matches_window_sql(window_id: UUID) -> ColumnElement[bool]:
+    """Live tickets (no slot) or WEB appointments pinned to this window.
+
+    Caller must OUTER JOIN Slot on Ticket.slot_id.
+    """
+    return or_(Ticket.slot_id.is_(None), Slot.window_id == window_id)

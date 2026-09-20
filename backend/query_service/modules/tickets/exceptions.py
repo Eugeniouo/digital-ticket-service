@@ -18,6 +18,10 @@ class MissingSlotIdError(Exception):
     """Slot ID is required for this ticket source."""
 
 
+class UnexpectedSlotIdError(Exception):
+    """Slot ID is not allowed for this ticket source."""
+
+
 class SlotServiceMismatchError(Exception):
     """Slot belongs to a different service than the ticket request."""
 

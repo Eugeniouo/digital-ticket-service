@@ -11,6 +11,7 @@ from query_service.modules.tickets.exceptions import (
     SlotFullError,
     SlotServiceMismatchError,
     TicketNotFoundError,
+    UnexpectedSlotIdError,
 )
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
 from query_service.modules.tickets.service import TicketService
@@ -24,7 +25,7 @@ router = APIRouter(tags=["Tickets"])
     status_code=status.HTTP_201_CREATED,
     responses={
         404: {"description": "Service or slot not found in this department"},
-        400: {"description": "Service inactive, missing slot_id, or slot/service mismatch"},
+        400: {"description": "Service inactive, missing/unexpected slot_id, or slot/service mismatch"},
         409: {"description": "Slot is full"},
     },
     summary="Issue a new ticket",
@@ -64,6 +65,12 @@ async def create_ticket(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Slot ID is required for web appointments",
+        ) from exc
+
+    except UnexpectedSlotIdError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Slot ID is only allowed for web appointments",
         ) from exc
 
     except SlotServiceMismatchError as exc:

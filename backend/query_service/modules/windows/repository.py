@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.orm.attributes import instance_state, set_committed_value
@@ -17,6 +17,7 @@ from query_service.modules.tickets.priority import (
     now_priority_seconds,
     overdue_live_sql,
     queue_eligible_sql,
+    ticket_matches_window_sql,
 )
 from query_service.modules.windows.exceptions import (
     ServiceNotInDepartmentError,
@@ -140,8 +141,6 @@ class WindowsRepository:
         now_seconds = now_priority_seconds()
         eligible = queue_eligible_sql(now_seconds)
         overdue_live = overdue_live_sql(now_seconds)
-        # WEB/slot tickets only for this window; QR/WALK_IN have no slot
-        for_this_window = or_(Ticket.slot_id.is_(None), Slot.window_id == locked.id)
 
         ticket = await self.session.scalar(
             select(Ticket)
@@ -151,7 +150,7 @@ class WindowsRepository:
                 Ticket.status == TicketStatus.QUEUED,
                 Ticket.service_id.in_(service_ids),
                 eligible,
-                for_this_window,
+                ticket_matches_window_sql(locked.id),
             )
             .order_by(overdue_live.asc(), Ticket.priority_key.asc(), Ticket.created_at.asc())
             .limit(1)
