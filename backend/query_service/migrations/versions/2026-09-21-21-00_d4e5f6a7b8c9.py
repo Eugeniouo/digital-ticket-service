@@ -1,7 +1,7 @@
 """Keep the issued channel after redirect.
 
 Revision ID: d4e5f6a7b8c9
-Revises: c3d4e5f6a7b8
+Revises: d5e6f7a8b9c0
 Create Date: 2026-09-21 21:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "d4e5f6a7b8c9"
-down_revision = "c3d4e5f6a7b8"
+down_revision = "d5e6f7a8b9c0"
 branch_labels = None
 depends_on = None
 
