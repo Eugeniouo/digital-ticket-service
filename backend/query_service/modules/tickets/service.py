@@ -5,6 +5,11 @@ from uuid import UUID
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
+from query_service.database.models.ticket_status_history import (
+    TicketStatusChange,
+    TicketStatusChangeReason,
+    TicketStatusHistory,
+)
 from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.exceptions import SlotNotFoundError
@@ -26,8 +31,8 @@ from query_service.modules.tickets.priority import (
     is_queue_eligible,
     now_in_queue_tz,
 )
-from query_service.modules.tickets.repository import TicketRepository
-from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
+from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
+from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse, TicketStatusHistoryResponse
 from query_service.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -40,12 +45,28 @@ class TicketService:
         service_repo: ServiceRepository = Depends(),
         slots_repo: SlotsRepository = Depends(),
         notifications: NotificationService = Depends(),
+        history_repo: TicketStatusHistoryRepository = Depends(),
     ) -> None:
         self.repository = repository
         # TODO: we should not import repositories from other services directly - it can avoid necessary business logic
         self.service_repo = service_repo
         self.slots_repo = slots_repo
         self.notifications = notifications
+        self.history_repo = history_repo
+
+    async def record_status_change(self, ticket: Ticket, change: TicketStatusChange) -> None:
+        if change.old_status == change.new_status:
+            return
+
+        history = TicketStatusHistory(
+            ticket_id=ticket.id,
+            old_status=change.old_status,
+            new_status=change.new_status,
+            reason=change.reason,
+            staff_id=change.staff_id,
+            window_id=change.window_id,
+        )
+        await self.history_repo.create(history)
 
     def _get_category_prefix(self, service_name: str) -> str:
         """Determines the ticket prefix based on the service name."""
@@ -62,7 +83,12 @@ class TicketService:
 
         return "У"
 
-    async def issue_ticket(self, department_id: UUID, request: TicketCreateRequest) -> TicketResponse:
+    async def issue_ticket(
+        self,
+        department_id: UUID,
+        request: TicketCreateRequest,
+        staff_id: UUID | None = None,
+    ) -> TicketResponse:
         service = await self.service_repo.get_by_id(request.service_id)
 
         if not service or service.department_id != department_id:
@@ -108,6 +134,16 @@ class TicketService:
         )
 
         created_ticket = await self.repository.create(ticket_data)
+
+        await self.record_status_change(
+            created_ticket,
+            TicketStatusChange(
+                old_status=None,
+                new_status=TicketStatus.QUEUED,
+                reason=TicketStatusChangeReason.ISSUED,
+                staff_id=staff_id,
+            ),
+        )
 
         return TicketResponse.model_validate(created_ticket)
 
@@ -164,8 +200,17 @@ class TicketService:
             raise InvalidTicketStateError
 
         slot_id = ticket.slot_id
+        old_status = ticket.status
         ticket.status = TicketStatus.CANCELED
         ticket.canceled_at = datetime.now(UTC)
+        await self.record_status_change(
+            ticket,
+            TicketStatusChange(
+                old_status=old_status,
+                new_status=TicketStatus.CANCELED,
+                reason=TicketStatusChangeReason.CANCELED,
+            ),
+        )
         await self.repository.save()
 
         await self.release_slot(slot_id)
@@ -185,8 +230,17 @@ class TicketService:
         now = datetime.now(UTC)
         slot_ids: list[UUID] = []
         for ticket in tickets:
+            old_status = ticket.status
             ticket.status = TicketStatus.CANCELED
             ticket.canceled_at = now
+            await self.record_status_change(
+                ticket,
+                TicketStatusChange(
+                    old_status=old_status,
+                    new_status=TicketStatus.CANCELED,
+                    reason=TicketStatusChangeReason.NOSHOW,
+                ),
+            )
             if ticket.slot_id is not None:
                 slot_ids.append(ticket.slot_id)
 
@@ -195,10 +249,31 @@ class TicketService:
         for slot_id in slot_ids:
             await self.release_slot(slot_id)
 
-    async def requeue(self, ticket: Ticket, elapsed_seconds: int = 0) -> Ticket:
+    async def requeue(
+        self,
+        ticket: Ticket,
+        elapsed_seconds: int = 0,
+        change: TicketStatusChange | None = None,
+    ) -> Ticket:
         """Return CALLED/SERVING ticket to QUEUED. Caller must hold FOR UPDATE."""
         if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
             raise InvalidTicketStateError
+
+        if change is None:
+            change = TicketStatusChange(
+                old_status=ticket.status,
+                new_status=TicketStatus.QUEUED,
+                reason=TicketStatusChangeReason.REQUEUED,
+                window_id=ticket.window_id,
+            )
+        else:
+            change = TicketStatusChange(
+                old_status=ticket.status,
+                new_status=TicketStatus.QUEUED,
+                reason=change.reason,
+                staff_id=change.staff_id,
+                window_id=change.window_id if change.window_id is not None else ticket.window_id,
+            )
 
         ticket.status = TicketStatus.QUEUED
         ticket.window_id = None
@@ -206,5 +281,26 @@ class TicketService:
         ticket.started_at = None
         ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
 
+        await self.record_status_change(ticket, change)
         await self.repository.save()
         return ticket
+
+
+class TicketStatusHistoryService:
+    def __init__(
+        self,
+        history_repo: TicketStatusHistoryRepository = Depends(),
+        ticket_repo: TicketRepository = Depends(),
+    ) -> None:
+        self.history_repo = history_repo
+        self.ticket_repo = ticket_repo
+
+    async def get_history(self, department_id: UUID, ticket_id: UUID) -> list[TicketStatusHistoryResponse]:
+        ticket = await self.ticket_repo.get_by_id(ticket_id)
+
+        if not ticket or ticket.department_id != department_id:
+            raise TicketNotFoundError
+
+        history = await self.history_repo.list_by_ticket_id(ticket_id)
+
+        return [TicketStatusHistoryResponse.model_validate(h) for h in history]

@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 from query_service.database.models.ticket import TicketSource, TicketStatus
+from query_service.database.models.ticket_status_history import TicketStatusChangeReason
 
 
 class TicketResponse(BaseModel):
@@ -35,3 +36,16 @@ class TicketCreateRequest(BaseModel):
     service_id: UUID
     source: TicketSource
     slot_id: UUID | None = None
+
+
+class TicketStatusHistoryResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    ticket_id: UUID
+    old_status: TicketStatus | None
+    new_status: TicketStatus
+    reason: TicketStatusChangeReason
+    staff_id: UUID | None = None
+    window_id: UUID | None = None
+    changed_at: datetime

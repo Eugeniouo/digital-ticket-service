@@ -8,6 +8,7 @@ from query_service.database.models.slot import Slot
 from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import Ticket
 from query_service.database.models.ticket_labels import TicketCounter
+from query_service.database.models.ticket_status_history import TicketStatusHistory
 from query_service.database.models.window import Window, WindowService
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "StaffRole",
     "Ticket",
     "TicketCounter",
+    "TicketStatusHistory",
     "Window",
     "WindowService",
 ]

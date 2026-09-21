@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from query_service.database.models.ticket import Ticket, TicketStatus
+from query_service.database.models.ticket_status_history import TicketStatusChange, TicketStatusChangeReason
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
@@ -34,6 +35,7 @@ def service() -> tuple[WindowsService, Mock, Mock]:
     tickets.expire_web_noshows = AsyncMock()
     tickets.requeue = AsyncMock()
     tickets.release_slot = AsyncMock()
+    tickets.record_status_change = AsyncMock()
 
     notifications = Mock()
     notifications.enqueue_called = AsyncMock()
@@ -65,6 +67,7 @@ async def test_call_next_returns_next_ticket(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
+            current_operator_id=None,
         ),
     )
     ticket = cast(
@@ -102,6 +105,7 @@ async def test_call_next_succeeds_when_notification_enqueue_fails(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
+            current_operator_id=None,
         ),
     )
     ticket = cast(
@@ -156,6 +160,7 @@ async def test_call_next_raises_when_queue_is_empty(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
+            current_operator_id=None,
         ),
     )
 
@@ -231,6 +236,7 @@ async def test_call_next_expires_web_no_shows_before_assigning_ticket(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
+            current_operator_id=None,
         ),
     )
     ticket = cast(
@@ -268,7 +274,7 @@ async def test_requeue_uses_ticket_service(
 
     department_id = uuid4()
     window_id = uuid4()
-    window = cast(Window, SimpleNamespace(id=window_id))
+    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=None))
     ticket = cast(
         Ticket,
         SimpleNamespace(id=uuid4(), called_at=None),
@@ -282,7 +288,16 @@ async def test_requeue_uses_ticket_service(
     result = await svc.requeue(department_id, window_id)
 
     assert result is requeued
-    tickets.requeue.assert_awaited_once_with(ticket, 0)
+    tickets.requeue.assert_awaited_once_with(
+        ticket,
+        0,
+        TicketStatusChange(
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.REQUEUED,
+            staff_id=None,
+            window_id=window_id,
+        ),
+    )
 
 
 @pytest.mark.asyncio
@@ -299,7 +314,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     service_id = uuid4()
     slot_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id))
+    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=None))
     ticket = cast(
         Ticket,
         SimpleNamespace(
@@ -334,5 +349,71 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     assert ticket.service_id == service_id
     assert ticket.slot_id is None
     assert ticket.source == TicketSource.WALK_IN
-    tickets.requeue.assert_awaited_once()
     tickets.release_slot.assert_awaited_once_with(slot_id)
+    tickets.requeue.assert_awaited_once_with(
+        ticket,
+        0,
+        TicketStatusChange(
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.REDIRECTED,
+            staff_id=None,
+            window_id=window_id,
+        ),
+    )
+
+
+def _ticket_service_with_history() -> tuple[TicketService, Mock]:
+    history_repo = Mock()
+    history_repo.create = AsyncMock()
+    svc = TicketService(
+        repository=Mock(),
+        service_repo=Mock(),
+        slots_repo=Mock(),
+        notifications=Mock(),
+        history_repo=history_repo,
+    )
+    return svc, history_repo
+
+
+@pytest.mark.asyncio
+async def test_record_status_change_writes_history_row() -> None:
+    svc, history_repo = _ticket_service_with_history()
+    ticket_id = uuid4()
+    window_id = uuid4()
+    ticket = cast(Ticket, SimpleNamespace(id=ticket_id))
+
+    await svc.record_status_change(
+        ticket,
+        TicketStatusChange(
+            old_status=TicketStatus.QUEUED,
+            new_status=TicketStatus.CALLED,
+            reason=TicketStatusChangeReason.CALLED,
+            staff_id=None,
+            window_id=window_id,
+        ),
+    )
+
+    history_repo.create.assert_awaited_once()
+    row = history_repo.create.await_args.args[0]
+    assert row.ticket_id == ticket_id
+    assert row.old_status == TicketStatus.QUEUED
+    assert row.new_status == TicketStatus.CALLED
+    assert row.reason == TicketStatusChangeReason.CALLED
+    assert row.window_id == window_id
+
+
+@pytest.mark.asyncio
+async def test_record_status_change_skips_when_status_unchanged() -> None:
+    svc, history_repo = _ticket_service_with_history()
+    ticket = cast(Ticket, SimpleNamespace(id=uuid4()))
+
+    await svc.record_status_change(
+        ticket,
+        TicketStatusChange(
+            old_status=TicketStatus.QUEUED,
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.CALLED,
+        ),
+    )
+
+    history_repo.create.assert_not_awaited()

@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import Depends
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +9,7 @@ from query_service.database.dependencies import get_db_session
 from query_service.database.models.department import Department
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
+from query_service.database.models.ticket_status_history import TicketStatusHistory
 from query_service.modules.tickets.priority import (
     now_in_queue_tz,
     now_priority_seconds,
@@ -143,3 +144,20 @@ class TicketRepository:
         await self.session.flush()
 
         return result.scalar_one()
+
+
+class TicketStatusHistoryRepository:
+    def __init__(self, session: AsyncSession = Depends(get_db_session)) -> None:
+        self.session = session
+
+    async def create(self, history: TicketStatusHistory) -> None:
+        self.session.add(history)
+
+    async def list_by_ticket_id(self, ticket_id: UUID, limit: int = 100) -> list[TicketStatusHistory]:
+        result = await self.session.scalars(
+            select(TicketStatusHistory)
+            .where(TicketStatusHistory.ticket_id == ticket_id)
+            .order_by(desc(TicketStatusHistory.changed_at), desc(TicketStatusHistory.id))
+            .limit(limit)
+        )
+        return list(result.all())

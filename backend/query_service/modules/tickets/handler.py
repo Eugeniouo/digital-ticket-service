@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import TicketSource
-from query_service.modules.auth.dependencies import get_optional_staff, require_admin
+from query_service.modules.auth.dependencies import get_optional_staff, require_admin, require_department_staff
 from query_service.modules.slots.exceptions import SlotNotFoundError
 from query_service.modules.tickets.exceptions import (
     DepartmentNotFoundError,
@@ -17,8 +17,8 @@ from query_service.modules.tickets.exceptions import (
     TicketNotFoundError,
     UnexpectedSlotIdError,
 )
-from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse
-from query_service.modules.tickets.service import TicketService
+from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse, TicketStatusHistoryResponse
+from query_service.modules.tickets.service import TicketService, TicketStatusHistoryService
 
 router = APIRouter()
 
@@ -60,8 +60,10 @@ async def create_ticket(
     """
     _ensure_walk_in_operator(department_id, payload, staff)
 
+    staff_id = staff.id if payload.source == TicketSource.WALK_IN and staff is not None else None
+
     try:
-        return await svc.issue_ticket(department_id, payload)
+        return await svc.issue_ticket(department_id, payload, staff_id=staff_id)
 
     except ServiceNotFoundError as exc:
         raise HTTPException(
@@ -182,4 +184,27 @@ async def cancel_ticket(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Ticket is not queued and cannot be canceled",
+        ) from exc
+
+
+@router.get(
+    "/{ticket_id}/status-history",
+    response_model=list[TicketStatusHistoryResponse],
+    responses={
+        404: {"description": "Ticket not found in this department"},
+    },
+    summary="Get ticket status history",
+)
+async def get_ticket_status_history(
+    department_id: UUID,
+    ticket_id: UUID,
+    svc: TicketStatusHistoryService = Depends(),
+    _staff: Staff = Depends(require_department_staff),
+) -> list[TicketStatusHistoryResponse]:
+    try:
+        return await svc.get_history(department_id, ticket_id)
+    except TicketNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Ticket not found in this department",
         ) from exc
