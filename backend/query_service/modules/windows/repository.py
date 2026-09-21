@@ -13,11 +13,13 @@ from query_service.database.models.slot import Slot
 from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.tickets.priority import (
+    effective_priority_sql,
     now_priority_seconds,
     overdue_live_sql,
     queue_eligible_sql,
     ticket_matches_window_sql,
 )
+from query_service.modules.tickets.queue_rules import load_queue_rules
 
 
 class WindowsRepository:
@@ -134,8 +136,10 @@ class WindowsRepository:
     async def find_next_eligible_ticket(self, window: Window, service_ids: list[UUID]) -> Ticket | None:
         """Select next QUEUED ticket for this window. Caller must hold the window lock."""
         now_seconds = now_priority_seconds()
-        eligible = queue_eligible_sql(now_seconds)
-        overdue_live = overdue_live_sql(now_seconds)
+        rules = await load_queue_rules(self.session, window.department_id)
+        eligible = queue_eligible_sql(now_seconds, rules)
+        overdue_live = overdue_live_sql(now_seconds, rules)
+        effective = effective_priority_sql(rules)
 
         return await self.session.scalar(
             select(Ticket)
@@ -147,7 +151,7 @@ class WindowsRepository:
                 eligible,
                 ticket_matches_window_sql(window.id),
             )
-            .order_by(overdue_live.asc(), Ticket.priority_key.asc(), Ticket.created_at.asc())
+            .order_by(overdue_live.asc(), effective.asc(), Ticket.created_at.asc())
             .limit(1)
             .with_for_update(skip_locked=True, of=Ticket),
         )

@@ -303,7 +303,7 @@ class WindowsService:
         ticket.service_id = payload.service_id
         ticket.slot_id = None
         ticket.source = TicketSource.WALK_IN
-        ticket.priority_key = compute_priority_key(TicketSource.WALK_IN, now_in_queue_tz())
+        ticket.priority_key = compute_priority_key(now_in_queue_tz())
 
         elapsed = _elapsed_at_window_seconds(ticket)
         requeued = await self.tickets.requeue(
