@@ -131,4 +131,16 @@ class Ticket(Base):
             unique=True,
             postgresql_where=text("status IN ('called', 'serving') AND window_id IS NOT NULL"),
         ),
+        # Day analytics filters completions and arrivals by department.
+        Index(
+            "ix_tickets_department_completed_at",
+            "department_id",
+            "completed_at",
+            postgresql_where=text("completed_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_tickets_department_created_at",
+            "department_id",
+            "created_at",
+        ),
     )
