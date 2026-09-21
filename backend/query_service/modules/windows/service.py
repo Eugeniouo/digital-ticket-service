@@ -227,6 +227,41 @@ class WindowsService:
 
         return ticket
 
+    async def mark_no_show(self, department_id: UUID, window_id: UUID) -> Ticket:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+
+        ticket = await self.repository.get_called_ticket_locked(window)
+        if ticket is None:
+            raise NoCalledTicketError
+
+        slot_id = ticket.slot_id
+        old_status = ticket.status
+        ticket.status = TicketStatus.CANCELED
+        ticket.canceled_at = datetime.now(UTC)
+        await self.tickets.record_status_change(
+            ticket,
+            TicketStatusChange(
+                old_status=old_status,
+                new_status=TicketStatus.CANCELED,
+                reason=TicketStatusChangeReason.NOSHOW,
+                staff_id=window.current_operator_id,
+                window_id=window.id,
+            ),
+        )
+        await self.repository.save()
+        await self.tickets.release_slot(slot_id)
+        await self._enqueue_after_noshow(ticket, window)
+
+        return ticket
+
+    async def _enqueue_after_noshow(self, ticket: Ticket, window: Window) -> None:
+        try:
+            await self.notifications.enqueue_noshow(ticket, window)
+        except Exception:
+            logger.exception("notification enqueue failed")
+
     async def complete(self, department_id: UUID, window_id: UUID) -> Ticket:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:

@@ -45,6 +45,25 @@ class NotificationService:
             idempotency_key=f"{ticket.id}:{NotificationEvent.TICKET_CALLED}:{ticket.called_at.isoformat()}",
         )
 
+    async def enqueue_noshow(self, ticket: Ticket, window: Window) -> None:
+        if ticket.canceled_at is None:
+            return
+
+        message_id = uuid4()
+        message = NotificationMessage(
+            id=message_id,
+            event_type=NotificationEvent.TICKET_NOSHOW,
+            ticket_id=ticket.id,
+            ticket_label=ticket.ticket_label,
+            department_id=ticket.department_id,
+            window_label=window.label,
+        )
+
+        await self._insert(
+            message,
+            idempotency_key=f"{ticket.id}:{NotificationEvent.TICKET_NOSHOW}:{ticket.canceled_at.isoformat()}",
+        )
+
     async def enqueue_approaching(self, ticket: Ticket, estimated_wait_time: int) -> None:
         message_id = uuid4()
         message = NotificationMessage(
