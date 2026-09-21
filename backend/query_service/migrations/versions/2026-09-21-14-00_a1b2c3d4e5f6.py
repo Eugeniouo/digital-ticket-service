@@ -37,6 +37,7 @@ def upgrade() -> None:
         "requeued",
         "redirected",
         name="ticket_status_change_reason",
+        create_type=False,
     )
     change_reason.create(op.get_bind(), checkfirst=True)
 
