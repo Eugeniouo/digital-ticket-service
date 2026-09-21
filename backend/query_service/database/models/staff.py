@@ -42,6 +42,13 @@ class Staff(Base):
         unique=True,
     )
 
+    display_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="",
+        server_default="",
+    )
+
     password_hash: Mapped[str] = mapped_column(
         String,
         nullable=False,

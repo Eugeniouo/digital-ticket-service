@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from query_service.database.models.staff import StaffRole
 
 MAX_POSSIBLE_NAME = 50
+MAX_DISPLAY_NAME = 100
 MAX_POSSIBLE_PASSWORD = 128
 
 
@@ -15,6 +16,7 @@ class StaffDTO(BaseModel):
 
     id: UUID
     username: str
+    display_name: str
     role: StaffRole
     department_id: UUID | None
     is_active: bool
@@ -40,6 +42,7 @@ class StaffCreateRequest(BaseModel):
 
     # perform strip for UX convenience outside of validation
     username: str = Field(min_length=1, max_length=MAX_POSSIBLE_NAME)
+    display_name: str = Field(min_length=1, max_length=MAX_DISPLAY_NAME)
     password: str = Field(min_length=1, max_length=MAX_POSSIBLE_PASSWORD)
     role: StaffRole
     department_id: UUID | None = None
