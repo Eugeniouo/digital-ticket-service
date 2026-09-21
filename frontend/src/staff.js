@@ -12,17 +12,17 @@ import { createStaffViews } from "./staff-views.js";
 import { currentOperator } from './operator-accounts.js';
 import { branches } from './mock-data.js';
 const signedOperator = currentOperator();
-const operatorBranch = branches.find(branch => branch.id === signedOperator?.branch) || branches[1];
+const operatorBranch = branches.find(branch => branch.id === signedOperator?.department_id) || branches[1];
 // Demo controller: session state, user actions and dialogs. No server calls.
 let analyticsOffset = 0;
 
 const root = document.querySelector("#staff");
 const modal = document.querySelector("#modal");
 let role =
-    signedOperator?.role === "manager"
-      ? "manager"
+    signedOperator?.role === "admin"
+      ? "admin"
       : "operator",
-  page = role === "manager" ? "Обзор" : "Рабочее место",
+  page = role === "admin" ? "Обзор" : "Рабочее место",
   opened = true,
   current = null,
   closing = false,
@@ -80,7 +80,7 @@ function log(text) {
 let rules = [10, 10, 20, 2];
 const { queueList, table, operator, windows, overview, analytics, rulesView } =
   createStaffViews(() => ({
-    operatorName: signedOperator?.name || "Анна Иванова",
+    operatorName: signedOperator?.display_name || "Анна Иванова",
     analyticsOffset,
     queue,
     current,
@@ -106,7 +106,7 @@ function render() {
           "Аккаунты",
           "QR отделения",
         ];
-  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorBranch.id)}</strong><small>${esc(operatorBranch.address)}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<div class="grid two"><section class="card"><h2>Журнал событий</h2>${history.map((h, i) => `<div class="activity">${esc(h)}<small>Демо-сессия · событие ${history.length - i}</small></div>`).join("")}</section><section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section></div>`}</main></div>`);
+  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorBranch.id)}</strong><small>${esc(operatorBranch.address)}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<div class="grid two"><section class="card"><h2>Журнал событий</h2>${history.map((h, i) => `<div class="activity">${esc(h)}<small>Демо-сессия · событие ${history.length - i}</small></div>`).join("")}</section><section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section></div>`}</main></div>`);
 }
 function dialog(title, body, footer) {
   modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${title}"><div class="row"><h2>${title}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer ${title === "Закрыть окно?" ? "vertical" : ""}">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
@@ -150,7 +150,7 @@ document.addEventListener("click", (e) => {
   }
 
   if (a.startsWith("nav-")) {
-    if (role !== "manager" && !["nav-Рабочее место", "nav-История смены"].includes(a)) return;
+    if (role !== "admin" && !["nav-Рабочее место", "nav-История смены"].includes(a)) return;
     page = a.slice(4);
     render();
     return;

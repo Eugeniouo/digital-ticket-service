@@ -9,6 +9,7 @@ from query_service.modules.auth.exceptions import (
     InvalidCredentialsError,
     InvalidStaffDepartmentError,
     StaffCreateForbiddenError,
+    StaffNotFoundError,
 )
 from query_service.modules.auth.repository import StaffRepository
 from query_service.modules.auth.schema import StaffCreateRequest, StaffDTO, TokenResponse
@@ -34,7 +35,7 @@ class AuthService:
         self.repository = repository
 
     async def sign_in(self, username: str, password: str) -> TokenResponse:
-        username = username.strip()
+        username = username.strip().lower()
         password = password.strip()
 
         staff = await self.repository.get_by_username(username)
@@ -63,7 +64,7 @@ class AuthService:
             raise DepartmentNotFoundError
 
         staff = Staff(
-            username=payload.username.strip(),
+            username=payload.username.strip().lower(),
             display_name=payload.display_name.strip(),
             password_hash=hash_password(payload.password.strip()),
             role=payload.role,
@@ -72,6 +73,15 @@ class AuthService:
         created = await self.repository.add(staff)
 
         return staff_to_dto(created)
+
+    async def change_password(self, actor: Staff, staff_id: UUID, password: str) -> None:
+        target = await self.repository.get_by_id(staff_id)
+        if target is None:
+            raise StaffNotFoundError
+
+        self._authorize_manage(actor, target)
+        target.password_hash = hash_password(password.strip())
+        await self.repository.save()
 
     def _validate_role_department(self, role: StaffRole, department_id: UUID | None) -> None:
         if role == StaffRole.ROOT and department_id is not None:
@@ -87,4 +97,14 @@ class AuthService:
         if role == StaffRole.ROOT:
             raise StaffCreateForbiddenError
         if department_id != actor.department_id:
+            raise StaffCreateForbiddenError
+
+    def _authorize_manage(self, actor: Staff, target: Staff) -> None:
+        if actor.role == StaffRole.ROOT:
+            return
+        if actor.role != StaffRole.ADMIN:
+            raise StaffCreateForbiddenError
+        if target.role == StaffRole.ROOT:
+            raise StaffCreateForbiddenError
+        if target.department_id != actor.department_id:
             raise StaffCreateForbiddenError

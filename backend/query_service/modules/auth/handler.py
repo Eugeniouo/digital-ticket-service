@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from query_service.database.models.staff import Staff, StaffRole
 from query_service.modules.auth.dependencies import get_current_staff
@@ -9,8 +11,15 @@ from query_service.modules.auth.exceptions import (
     InvalidCredentialsError,
     InvalidStaffDepartmentError,
     StaffCreateForbiddenError,
+    StaffNotFoundError,
 )
-from query_service.modules.auth.schema import SignInRequest, StaffCreateRequest, StaffDTO, TokenResponse
+from query_service.modules.auth.schema import (
+    SignInRequest,
+    StaffCreateRequest,
+    StaffDTO,
+    StaffPasswordChangeRequest,
+    TokenResponse,
+)
 from query_service.modules.auth.service import AuthService, staff_to_dto
 
 auth_router = APIRouter()
@@ -81,6 +90,28 @@ async def create_staff(
         ) from exc
 
 
+@staff_router.patch(
+    "/{staff_id}/password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+async def change_staff_password(
+    staff_id: UUID,
+    payload: StaffPasswordChangeRequest,
+    staff: Staff = Depends(get_current_staff),
+    svc: AuthService = Depends(),
+) -> None:
+    if staff.role not in (StaffRole.ADMIN, StaffRole.ROOT):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden")
+
+    try:
+        await svc.change_password(staff, staff_id, payload.password)
+    except StaffCreateForbiddenError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Forbidden") from exc
+    except StaffNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff not found") from exc
+
+
 # TODO: deactivate user
-# TODO: change role, department, password
+# TODO: change role, department
 # TODO: delete

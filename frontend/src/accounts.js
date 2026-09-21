@@ -1,23 +1,28 @@
 import './manager-guard.js';
 import { branches } from './mock-data.js';
 import { escapeHtml } from './shared/html.js';
-import { listOperators, createOperator, changePassword, changeBranch, currentOperator } from './operator-accounts.js';
+import { listOperators, createOperator, changePassword, currentOperator } from './operator-accounts.js';
 
 const form = document.querySelector('#create-account');
 const message = document.querySelector('#account-message');
 const modal = document.querySelector('#modal');
-const branchOptions = selected => branches.map(branch => `<option value="${branch.id}" ${branch.id === selected ? 'selected' : ''}>№ ${branch.id} · ${escapeHtml(branch.address)}</option>`).join('');
-form.elements.branch.innerHTML = branchOptions(currentOperator().branch);
+const departmentOptions = selected => branches.map(branch => `<option value="${branch.id}" ${branch.id === selected ? 'selected' : ''}>№ ${branch.id} · ${escapeHtml(branch.address)}</option>`).join('');
+form.elements.department_id.innerHTML = departmentOptions(currentOperator().department_id);
 
 function render() {
-  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== "manager").map(account => `<article class="queue-item"><h3>${escapeHtml(account.name)}</h3><p>${escapeHtml(account.login)} · Отделение № ${escapeHtml(account.branch)}</p><div class="row"><button data-password="${account.id}">Сменить пароль</button><button data-branch="${account.id}">Сменить отделение</button></div></article>`).join('') || '<p class="muted">Операторов пока нет. Создайте первый аккаунт.</p>';
+  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== 'admin').map(account => `<article class="queue-item"><h3>${escapeHtml(account.display_name)}</h3><p>${escapeHtml(account.username)} · Отделение № ${escapeHtml(account.department_id)}</p><div class="row"><button data-password="${account.id}">Сменить пароль</button></div></article>`).join('') || '<p class="muted">Операторов пока нет. Создайте первый аккаунт.</p>';
 }
 form.addEventListener('submit', async event => {
   event.preventDefault();
   const submit = form.querySelector('button');
   submit.disabled = true;
   try {
-    await createOperator({ login: form.elements.username.value, name: form.elements.displayName.value, password: form.elements.password.value, branch: form.elements.branch.value });
+    await createOperator({
+      username: form.elements.username.value,
+      display_name: form.elements.display_name.value,
+      password: form.elements.password.value,
+      department_id: form.elements.department_id.value,
+    });
     form.reset(); render(); message.textContent = 'Оператор создан. Теперь можно войти с его логином и паролем.';
   } catch (error) { message.textContent = error.message; }
   finally { submit.disabled = false; }
@@ -25,11 +30,10 @@ form.addEventListener('submit', async event => {
 document.querySelector('#accounts').addEventListener('click', event => {
   const button = event.target.closest('button');
   if (!button) return;
-  const passwordMode = Boolean(button.dataset.password);
-  const id = button.dataset.password || button.dataset.branch;
+  const id = button.dataset.password;
   const account = listOperators().find(item => item.id === id);
   if (!account) return;
-  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"><h2 id="edit-title">${passwordMode ? 'Новый пароль' : 'Другое отделение'}</h2><p>${escapeHtml(account.name)}</p><form id="edit-account"><label for="edit-value">${passwordMode ? 'Пароль — от 8 символов' : 'Отделение'}</label>${passwordMode ? '<input id="edit-value" name="value" type="password" required minlength="8" maxlength="200" autocomplete="new-password">' : `<select id="edit-value" name="value">${branchOptions(account.branch)}</select>`}<p id="edit-message" role="alert"></p><div class="footer"><button type="button" id="close-edit">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></section></div>`;
+  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title"><h2 id="edit-title">Новый пароль</h2><p>${escapeHtml(account.display_name)}</p><form id="edit-account"><label for="edit-value">Пароль — от 8 символов</label><input id="edit-value" name="value" type="password" required minlength="8" maxlength="128" autocomplete="new-password"><p id="edit-message" role="alert"></p><div class="footer"><button type="button" id="close-edit">Отмена</button><button class="primary" type="submit">Сохранить</button></div></form></section></div>`;
   modal.querySelector('#edit-value').focus();
   modal.querySelector('#close-edit').onclick = () => { modal.innerHTML = ''; button.focus(); };
   modal.querySelector('form').onsubmit = async event => {
@@ -38,9 +42,8 @@ document.querySelector('#accounts').addEventListener('click', event => {
     const submit = edit.querySelector('[type=submit]');
     submit.disabled = true;
     try {
-      if (passwordMode) await changePassword(id, edit.elements.value.value);
-      else changeBranch(id, edit.elements.value.value);
-      modal.innerHTML = ''; render(); message.textContent = passwordMode ? 'Пароль изменён. Для следующего входа используйте новый пароль.' : 'Отделение изменено. Рабочий экран обновится при следующем открытии.';
+      await changePassword(id, edit.elements.value.value);
+      modal.innerHTML = ''; render(); message.textContent = 'Пароль изменён. Для следующего входа используйте новый пароль.';
     } catch (error) { modal.querySelector('#edit-message').textContent = error.message; submit.disabled = false; }
   };
 });
