@@ -1,0 +1,15 @@
+.home-screen { padding-top: 60px; }
+.home-kicker { color: #8c92a2; letter-spacing: 1.6px; font-size: 11px; margin: 48px 0 16px; text-align: center; }
+.home-screen h1 { font-size: 26px; letter-spacing: -.7px; text-align: center; }
+.home-description { color: #747988; text-align: center; font-size: 14px; margin-bottom: 32px; }
+.home-actions { display: grid; gap: 14px; }
+.home-action { display: flex; align-items: center; gap: 12px; padding: 22px 16px; border-radius: 18px; background: #f6f7f9; text-decoration: none; color: #292c38; }
+.home-action>span:nth-child(2) { flex: 1; }
+.home-action strong { display: block; font-size: 16px; line-height: 1.4; }
+.home-action small { display: block; color: #747988; font-size: 12px; margin-top: 6px; }
+.home-symbol { color: #1928dc; font-size: 14px; font-weight: 600; }
+.home-action:hover { background: #eef0ff; }
+.home-action-staff { background: #1928dc; color: white; }
+.home-action-staff small,.home-action-staff .home-symbol { color: #bfcaff; }
+.home-action-staff:hover { background: #1420bd; }
+.home-action:focus-visible { outline: 3px solid #86bbff; outline-offset: 3px; }

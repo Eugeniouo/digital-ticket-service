@@ -1,0 +1,26 @@
+.app-navigation {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e9ebf1;
+  font:
+    13px Arial,
+    sans-serif;
+}
+.app-navigation a {
+  padding: 9px 12px;
+  border-radius: 8px;
+  color: #504f55;
+  text-decoration: none;
+}
+.app-navigation a:hover,
+.app-navigation a[aria-current="page"] {
+  background: #eef0ff;
+  color: #1928dc;
+}
+.app-navigation a:focus-visible {
+  outline: 3px solid #86bbff;
+}
