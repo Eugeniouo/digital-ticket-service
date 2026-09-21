@@ -1,7 +1,7 @@
 from fastapi.routing import APIRouter
 
 from query_service.api import monitoring
-from query_service.modules import departments, issues, services, slots, windows
+from query_service.modules import analytics, departments, issues, services, slots, windows
 from query_service.modules.auth.handler import auth_router, staff_router
 from query_service.modules.tickets.handler import router as tickets_router
 
@@ -15,3 +15,4 @@ api_router.include_router(windows.router, prefix="/departments/{department_id}/w
 api_router.include_router(slots.router, prefix="/departments/{department_id}/slots", tags=["slots"])
 api_router.include_router(tickets_router, prefix="/departments/{department_id}/tickets", tags=["tickets"])
 api_router.include_router(issues.router, prefix="/departments/{department_id}/issues", tags=["issues"])
+api_router.include_router(analytics.router, prefix="/departments/{department_id}/analytics", tags=["analytics"])
