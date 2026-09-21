@@ -1,7 +1,7 @@
 """Add ticket_status_history table.
 
 Revision ID: a1b2c3d4e5f6
-Revises: b7c8d9e0f1a2
+Revises: 956d1793ec6c
 Create Date: 2026-09-21 14:00:00.000000
 
 """
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "a1b2c3d4e5f6"
-down_revision = "b7c8d9e0f1a2"
+down_revision = "956d1793ec6c"
 branch_labels = None
 depends_on = None
 
