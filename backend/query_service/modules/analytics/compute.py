@@ -9,7 +9,6 @@ from query_service.database.models.ticket import TicketSource, TicketStatus
 from query_service.database.models.ticket_status_history import TicketStatusChangeReason
 from query_service.modules.analytics.schema import (
     HOURS_IN_DAY,
-    AppealChannel,
     AppealSourceCount,
     DayAnalyticsResponse,
     HourlyServed,
@@ -23,11 +22,6 @@ _QUEUE_ENTRY = frozenset(
         TicketStatusChangeReason.REQUEUED,
         TicketStatusChangeReason.REDIRECTED,
     },
-)
-_SOURCE_CHANNELS: tuple[tuple[TicketSource, AppealChannel], ...] = (
-    (TicketSource.WEB, "appointment"),
-    (TicketSource.QR, "qr"),
-    (TicketSource.WALK_IN, "walk-in"),
 )
 
 
@@ -183,7 +177,7 @@ def _hourly(completed: Sequence[CompletedVisit], tz: ZoneInfo) -> list[HourlySer
 
 
 def _sources(source_counts: Mapping[TicketSource, int]) -> list[AppealSourceCount]:
-    return [AppealSourceCount(source=channel, count=source_counts.get(source, 0)) for source, channel in _SOURCE_CHANNELS]
+    return [AppealSourceCount(source=source, count=source_counts.get(source, 0)) for source in TicketSource]
 
 
 def _window_loads(

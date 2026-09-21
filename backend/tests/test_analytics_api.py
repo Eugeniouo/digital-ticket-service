@@ -123,7 +123,7 @@ async def test_omitted_date_is_today_in_the_department_timezone(
     assert [item["hour"] for item in body["hourly"]] == list(range(24))
     assert sum(item["served_count"] for item in body["hourly"]) == 0
     assert body["sources"] == [
-        {"source": "appointment", "count": 0},
+        {"source": "web", "count": 0},
         {"source": "qr", "count": 0},
         {"source": "walk-in", "count": 0},
     ]
@@ -213,7 +213,7 @@ async def test_admin_receives_the_full_day_chart(client: AsyncClient, fastapi_ap
     assert body["hourly"][10]["served_count"] == 1
     assert body["hourly"][7]["served_count"] == 0
     assert body["sources"] == [
-        {"source": "appointment", "count": 0},
+        {"source": "web", "count": 0},
         {"source": "qr", "count": 0},
         {"source": "walk-in", "count": 1},
     ]

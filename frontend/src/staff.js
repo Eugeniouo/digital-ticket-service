@@ -32,28 +32,28 @@ let queue = [
   {
     id: "П-008",
     service: services[2],
-    source: "Запись",
+    source: "web",
     wait: 3,
     time: "На 14:30",
   },
   {
     id: "Ж-015",
     service: services[0],
-    source: "Живая очередь",
+    source: "walk-in",
     wait: 29,
     time: "Повышен приоритет",
   },
   {
     id: "А-024",
     service: services[0],
-    source: "QR-код",
+    source: "qr",
     wait: 12,
     time: "В отделении",
   },
   {
     id: "А-025",
     service: services[1],
-    source: "QR-код",
+    source: "qr",
     wait: 8,
     time: "В отделении",
   },
@@ -270,7 +270,7 @@ document.addEventListener("click", (e) => {
       const ticket = {
         id: "Ж-" + String(serial++).padStart(3, "0"),
         service: modal.querySelector("#service").value,
-        source: "Живая очередь",
+        source: "walk-in",
         wait: 0,
         time: "Только что",
       };
