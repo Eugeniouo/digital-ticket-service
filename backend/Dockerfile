@@ -1,11 +1,8 @@
-FROM ghcr.io/astral-sh/uv:0.11.7-python3.13-trixie AS uv
+FROM ghcr.io/astral-sh/uv:0.12.16-python3.13-trixie AS uv
 
 # STAGE 1: prod stage
 # Only install main dependencies
 FROM python:3.13-slim-trixie AS prod
-RUN apt-get update && apt-get install -y \
-  gcc \
-  && rm -rf /var/lib/apt/lists/*
 
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
@@ -21,7 +18,8 @@ RUN --mount=from=uv,source=/usr/local/bin/uv,target=/bin/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
-COPY . .
+COPY pyproject.toml uv.lock alembic.ini README.md ./
+COPY backend ./backend
 
 RUN --mount=from=uv,source=/usr/local/bin/uv,target=/bin/uv \
     --mount=type=cache,target=/root/.cache/uv \

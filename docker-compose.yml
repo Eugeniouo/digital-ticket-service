@@ -1,9 +1,9 @@
 services:
   api: &main_app
     build:
-      context: backend
+      context: .
+      dockerfile: backend/Dockerfile
       target: dev
-      dockerfile: ./Dockerfile
     image: query_service:${QUERY_SERVICE_VERSION:-latest}
     restart: always
     ports:
