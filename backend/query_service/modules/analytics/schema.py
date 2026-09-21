@@ -1,10 +1,11 @@
 from datetime import date
-from typing import Literal, Self
+from typing import Self
 from uuid import UUID
 
 from pydantic import BaseModel, Field, model_validator
 
-AppealChannel = Literal["appointment", "qr", "walk-in"]
+from query_service.database.models.ticket import TicketSource
+
 HOURS_IN_DAY = 24
 
 
@@ -18,7 +19,7 @@ class HourlyServed(BaseModel):
 class AppealSourceCount(BaseModel):
     """How many appeals arrived through one channel."""
 
-    source: AppealChannel
+    source: TicketSource
     count: int = Field(ge=0)
 
 
@@ -59,7 +60,7 @@ class DayAnalyticsResponse(BaseModel):
             raise ValueError("hourly must list hours 0 through 23 in order")
 
         channels = [item.source for item in self.sources]
-        if channels != ["appointment", "qr", "walk-in"]:
-            raise ValueError("sources must list appointment, qr, and walk-in")
+        if channels != list(TicketSource):
+            raise ValueError("sources must list web, qr, and walk-in")
 
         return self

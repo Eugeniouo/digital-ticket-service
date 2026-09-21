@@ -12,7 +12,7 @@ export function getDailyReport(offset = 0, today = new Date()) {
     averageWait: 11 + variation,
     maximumWait: 29 + variation * 2,
     averageService: 4 + variation % 2,
-    sources: [['QR-код', 64 + variation * 3], ['Предварительная запись', 45 + variation * 2], ['Живая очередь', 28 + variation]],
+    sources: [['web', 45 + variation * 2], ['qr', 64 + variation * 3], ['walk-in', 28 + variation]],
     utilization: [78, 62, 85, 57].map(value => value - variation),
   };
 }

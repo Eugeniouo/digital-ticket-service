@@ -265,7 +265,7 @@ def test_empty_day_has_null_durations_and_a_full_chart() -> None:
     assert done.avg_service_seconds is None
     assert [item.hour for item in done.hourly] == list(range(24))
     assert sum(item.served_count for item in done.hourly) == 0
-    assert [item.source for item in done.sources] == ["appointment", "qr", "walk-in"]
+    assert [item.source for item in done.sources] == ["web", "qr", "walk-in"]
     assert [item.count for item in done.sources] == [0, 3, 0]
     assert done.windows[0].served_seconds == 0
     assert done.windows[0].schedule_open_seconds == 9 * 3600
