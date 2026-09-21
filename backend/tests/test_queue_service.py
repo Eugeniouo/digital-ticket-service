@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from query_service.database.models.ticket import Ticket, TicketStatus
-from query_service.database.models.ticket_status_history import TicketStatusChangeReason
+from query_service.database.models.ticket_status_history import TicketStatusChange, TicketStatusChangeReason
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
@@ -291,9 +291,12 @@ async def test_requeue_uses_ticket_service(
     tickets.requeue.assert_awaited_once_with(
         ticket,
         0,
-        reason=TicketStatusChangeReason.REQUEUED,
-        staff_id=None,
-        window_id=window_id,
+        TicketStatusChange(
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.REQUEUED,
+            staff_id=None,
+            window_id=window_id,
+        ),
     )
 
 
@@ -350,9 +353,12 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     tickets.requeue.assert_awaited_once_with(
         ticket,
         0,
-        reason=TicketStatusChangeReason.REDIRECTED,
-        staff_id=None,
-        window_id=window_id,
+        TicketStatusChange(
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.REDIRECTED,
+            staff_id=None,
+            window_id=window_id,
+        ),
     )
 
 
@@ -378,11 +384,13 @@ async def test_record_status_change_writes_history_row() -> None:
 
     await svc.record_status_change(
         ticket,
-        TicketStatus.QUEUED,
-        TicketStatus.CALLED,
-        TicketStatusChangeReason.CALLED,
-        staff_id=None,
-        window_id=window_id,
+        TicketStatusChange(
+            old_status=TicketStatus.QUEUED,
+            new_status=TicketStatus.CALLED,
+            reason=TicketStatusChangeReason.CALLED,
+            staff_id=None,
+            window_id=window_id,
+        ),
     )
 
     history_repo.create.assert_awaited_once()
@@ -401,9 +409,11 @@ async def test_record_status_change_skips_when_status_unchanged() -> None:
 
     await svc.record_status_change(
         ticket,
-        TicketStatus.QUEUED,
-        TicketStatus.QUEUED,
-        TicketStatusChangeReason.CALLED,
+        TicketStatusChange(
+            old_status=TicketStatus.QUEUED,
+            new_status=TicketStatus.QUEUED,
+            reason=TicketStatusChangeReason.CALLED,
+        ),
     )
 
     history_repo.create.assert_not_awaited()

@@ -5,7 +5,11 @@ from uuid import UUID
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
-from query_service.database.models.ticket_status_history import TicketStatusChangeReason, TicketStatusHistory
+from query_service.database.models.ticket_status_history import (
+    TicketStatusChange,
+    TicketStatusChangeReason,
+    TicketStatusHistory,
+)
 from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.exceptions import SlotNotFoundError
@@ -50,26 +54,17 @@ class TicketService:
         self.notifications = notifications
         self.history_repo = history_repo
 
-    async def record_status_change(
-        self,
-        ticket: Ticket,
-        old_status: TicketStatus | None,
-        new_status: TicketStatus,
-        reason: TicketStatusChangeReason,
-        *,
-        staff_id: UUID | None = None,
-        window_id: UUID | None = None,
-    ) -> None:
-        if old_status == new_status:
+    async def record_status_change(self, ticket: Ticket, change: TicketStatusChange) -> None:
+        if change.old_status == change.new_status:
             return
 
         history = TicketStatusHistory(
             ticket_id=ticket.id,
-            old_status=old_status,
-            new_status=new_status,
-            reason=reason,
-            staff_id=staff_id,
-            window_id=window_id,
+            old_status=change.old_status,
+            new_status=change.new_status,
+            reason=change.reason,
+            staff_id=change.staff_id,
+            window_id=change.window_id,
         )
         await self.history_repo.create(history)
 
@@ -142,10 +137,12 @@ class TicketService:
 
         await self.record_status_change(
             created_ticket,
-            None,
-            TicketStatus.QUEUED,
-            TicketStatusChangeReason.ISSUED,
-            staff_id=staff_id,
+            TicketStatusChange(
+                old_status=None,
+                new_status=TicketStatus.QUEUED,
+                reason=TicketStatusChangeReason.ISSUED,
+                staff_id=staff_id,
+            ),
         )
 
         return TicketResponse.model_validate(created_ticket)
@@ -208,9 +205,11 @@ class TicketService:
         ticket.canceled_at = datetime.now(UTC)
         await self.record_status_change(
             ticket,
-            old_status,
-            TicketStatus.CANCELED,
-            TicketStatusChangeReason.CANCELED,
+            TicketStatusChange(
+                old_status=old_status,
+                new_status=TicketStatus.CANCELED,
+                reason=TicketStatusChangeReason.CANCELED,
+            ),
         )
         await self.repository.save()
 
@@ -236,9 +235,11 @@ class TicketService:
             ticket.canceled_at = now
             await self.record_status_change(
                 ticket,
-                old_status,
-                TicketStatus.CANCELED,
-                TicketStatusChangeReason.NOSHOW,
+                TicketStatusChange(
+                    old_status=old_status,
+                    new_status=TicketStatus.CANCELED,
+                    reason=TicketStatusChangeReason.NOSHOW,
+                ),
             )
             if ticket.slot_id is not None:
                 slot_ids.append(ticket.slot_id)
@@ -252,17 +253,27 @@ class TicketService:
         self,
         ticket: Ticket,
         elapsed_seconds: int = 0,
-        *,
-        reason: TicketStatusChangeReason = TicketStatusChangeReason.REQUEUED,
-        staff_id: UUID | None = None,
-        window_id: UUID | None = None,
+        change: TicketStatusChange | None = None,
     ) -> Ticket:
         """Return CALLED/SERVING ticket to QUEUED. Caller must hold FOR UPDATE."""
         if ticket.status not in (TicketStatus.CALLED, TicketStatus.SERVING):
             raise InvalidTicketStateError
 
-        old_status = ticket.status
-        history_window_id = window_id if window_id is not None else ticket.window_id
+        if change is None:
+            change = TicketStatusChange(
+                old_status=ticket.status,
+                new_status=TicketStatus.QUEUED,
+                reason=TicketStatusChangeReason.REQUEUED,
+                window_id=ticket.window_id,
+            )
+        else:
+            change = TicketStatusChange(
+                old_status=ticket.status,
+                new_status=TicketStatus.QUEUED,
+                reason=change.reason,
+                staff_id=change.staff_id,
+                window_id=change.window_id if change.window_id is not None else ticket.window_id,
+            )
 
         ticket.status = TicketStatus.QUEUED
         ticket.window_id = None
@@ -270,14 +281,7 @@ class TicketService:
         ticket.started_at = None
         ticket.priority_key = max(0, ticket.priority_key - elapsed_seconds)
 
-        await self.record_status_change(
-            ticket,
-            old_status,
-            TicketStatus.QUEUED,
-            reason,
-            staff_id=staff_id,
-            window_id=history_window_id,
-        )
+        await self.record_status_change(ticket, change)
         await self.repository.save()
         return ticket
 

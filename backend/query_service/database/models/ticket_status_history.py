@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
@@ -19,6 +20,15 @@ class TicketStatusChangeReason(StrEnum):
     NOSHOW = "noshow"
     REQUEUED = "requeued"
     REDIRECTED = "redirected"
+
+
+@dataclass(frozen=True, slots=True)
+class TicketStatusChange:
+    new_status: TicketStatus
+    reason: TicketStatusChangeReason
+    old_status: TicketStatus | None = None
+    staff_id: UUID | None = None
+    window_id: UUID | None = None
 
 
 class TicketStatusHistory(Base):
