@@ -58,7 +58,6 @@ class QueueContext:
 @pytest.fixture
 async def queue_context(dbsession: AsyncSession) -> QueueContext:
     department = Department(
-        name=f"Test department {uuid4()}",
         address="Test address",
         open_time=time(8, 0),
         close_time=time(20, 0),
@@ -66,7 +65,6 @@ async def queue_context(dbsession: AsyncSession) -> QueueContext:
     )
 
     other_department = Department(
-        name=f"Other department {uuid4()}",
         address="Other test address",
         open_time=time(8, 0),
         close_time=time(20, 0),

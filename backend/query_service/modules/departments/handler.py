@@ -5,10 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from query_service.database.models.department import Department
 from query_service.database.models.staff import Staff
 from query_service.modules.auth.dependencies import require_admin, require_root
-from query_service.modules.departments.exceptions import DepartmentNotFoundError
+from query_service.modules.departments.exceptions import (
+    DepartmentNotFoundError,
+    DuplicateDepartmentCodeError,
+    InvalidQrBaseUrlError,
+)
 from query_service.modules.departments.schema import (
     DepartmentCreateRequestDTO,
     DepartmentDTO,
+    DepartmentQrDTO,
     QueueRulesDTO,
     QueueRulesUpdateDTO,
 )
@@ -19,17 +24,28 @@ router = APIRouter()
 
 @router.get("", response_model=list[DepartmentDTO])
 async def get_departments(svc: DepartmentService = Depends()) -> list[Department]:
-    """Return all departments, including inactive ones, ordered by name and ID."""
+    """Return all departments, including inactive ones, ordered by code and ID."""
     return await svc.get_all()
 
 
-@router.post("", response_model=DepartmentDTO, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=DepartmentDTO,
+    status_code=status.HTTP_201_CREATED,
+    responses={409: {"description": "Department code already exists"}},
+)
 async def create_department(
     payload: DepartmentCreateRequestDTO,
     svc: DepartmentService = Depends(),
     _staff: Staff = Depends(require_root),
 ) -> Department:
-    return await svc.create(payload)
+    try:
+        return await svc.create(payload)
+    except DuplicateDepartmentCodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Department code already exists",
+        ) from exc
 
 
 @router.get("/{department_id}", response_model=DepartmentDTO, responses={404: {"description": "Department not found"}})
@@ -38,6 +54,31 @@ async def get_department(department_id: UUID, svc: DepartmentService = Depends()
         return await svc.get_by_id(department_id)
     except DepartmentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found") from exc
+
+
+@router.get(
+    "/{department_id}/qr",
+    response_model=DepartmentQrDTO,
+    responses={
+        404: {"description": "Department not found"},
+        422: {"description": "Frontend origin is not an HTTP(S) URL"},
+    },
+    summary="QR poster for visitors of this department",
+)
+async def get_department_qr(
+    department_id: UUID,
+    svc: DepartmentService = Depends(),
+    _staff: Staff = Depends(require_admin),
+) -> DepartmentQrDTO:
+    try:
+        return await svc.get_qr(department_id)
+    except DepartmentNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found") from exc
+    except InvalidQrBaseUrlError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Frontend origin must be an HTTP(S) URL with a host",
+        ) from exc
 
 
 @router.get(

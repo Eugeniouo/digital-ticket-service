@@ -48,7 +48,6 @@ def _make_windows_service(dbsession: AsyncSession) -> WindowsService:
 
 async def _seed_queue(dbsession: AsyncSession) -> tuple[Department, Service, Window, Ticket]:
     department = Department(
-        name=f"Notify department {uuid4()}",
         address="Test address",
         open_time=time(8, 0),
         close_time=time(20, 0),
