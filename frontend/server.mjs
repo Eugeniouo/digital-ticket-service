@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = dirname(fileURLToPath(import.meta.url))
 const port = Number(process.env.PORT || 4173)
+const host = process.env.HOST || '127.0.0.1'
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml' }
 
 export function createDevServer() {
@@ -59,5 +60,5 @@ export function createDevServer() {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  createDevServer().listen(port, '127.0.0.1', () => console.log(`Pochta Queue: http://localhost:${port}`))
+  createDevServer().listen(port, host, () => console.log(`Pochta Queue: http://localhost:${port}`))
 }

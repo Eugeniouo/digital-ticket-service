@@ -1,0 +1,15 @@
+services:
+  api:
+    ports: !reset []
+  db:
+    ports: !reset []
+  valkey:
+    ports: !reset []
+  frontend:
+    ports: !reset []
+  migrator:
+    ports: !reset []
+  proxy:
+    ports: !override
+      - "80:80"
+      - "443:443"

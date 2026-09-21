@@ -149,3 +149,6 @@ CLAUDE.md
 
 # OS
 .DS_Store
+
+# Netlify CLI
+.netlify/
