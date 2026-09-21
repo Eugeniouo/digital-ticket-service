@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Вход — Почта России</title>
+    <link rel="stylesheet" href="/src/login.css">
+    <link rel="stylesheet" href="/src/navigation.css">
+  </head>
+  <body>
+    <main class="login-layout">
+      <section class="login-card" aria-labelledby="login-title">
+        <img class="login-logo" src="/assets/logo.svg" alt="Почта России">
+        <p class="eyebrow">Электронная очередь</p>
+        <h1 id="login-title">Вход для сотрудников</h1>
+        <p class="description">Войдите в рабочее пространство отделения</p>
+        <form id="login-form">
+          <label for="login">Логин</label>
+          <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required maxlength="100" autocapitalize="none" spellcheck="false">
+          <label for="password">Пароль</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required maxlength="200">
+          <p id="login-error" class="error" role="alert"></p>
+          <button class="login-submit" type="submit">Войти</button>
+        </form>
+        <p class="demo-note">Локальный прототип: используйте тестовые данные. Аккаунт определяет рабочее место сотрудника. Для эксплуатации нужна серверная авторизация.</p>
+        <a class="visitor-link" href="/">Перейти к записи посетителя →</a>
+      </section>
+    </main>
+    <script type="module" src="/src/login.js"></script>
+    <script type="module" src="/src/navigation.js"></script>
+  </body>
+</html>

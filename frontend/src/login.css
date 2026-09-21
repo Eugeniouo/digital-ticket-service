@@ -1,0 +1,22 @@
+:root { font-family: 'Golos Text', Arial, sans-serif; color: #2b2d34; background: #f5f6fa; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; min-width: 320px; }
+.login-layout { min-height: calc(100dvh - 60px); display: grid; place-items: center; padding: 40px 20px; }
+.login-card { width: 100%; max-width: 440px; padding: 40px; background: white; border: 1px solid #e9ebf1; border-radius: 24px; }
+.login-logo { display: block; width: 235px; max-width: 100%; margin: 0 auto 32px; }
+.eyebrow { text-align: center; color: #747988; font-size: 13px; margin: 0 0 12px; }
+h1 { font-size: 25px; line-height: 1.25; text-align: center; margin: 0 0 12px; letter-spacing: -.6px; }
+.description { color: #747988; text-align: center; font-size: 14px; line-height: 1.5; margin-bottom: 28px; }
+label { display: block; font-size: 14px; font-weight: 600; margin: 20px 0 9px; }
+input { width: 100%; min-height: 52px; border: 1px solid #e1e3eb; border-radius: 12px; padding: 14px; background: #f6f7f9; color: #2b2d34; font: inherit; }
+input::placeholder { color: #818592; }
+select { width: 100%; min-height: 52px; border: 1px solid #e1e3eb; border-radius: 12px; padding: 12px; background: #f6f7f9; color: #2b2d34; font: inherit; }
+button { font: inherit; cursor: pointer; }
+.login-submit { width: 100%; min-height: 53px; border: 0; border-radius: 12px; background: #1928dc; color: white; font-size: 18px; font-weight: 500; }
+.login-submit:hover { background: #1420bd; }
+input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #86bbff; outline-offset: 3px; }
+.error { color: #c52e36; font-size: 13px; min-height: 16px; margin: 12px 0; }
+.demo-note { font-size: 12px; line-height: 1.6; color: #747988; padding: 14px; background: #f6f7f9; border-radius: 12px; margin: 24px 0; }
+.visitor-link { display: block; text-align: center; font-size: 13px; text-decoration: none; color: #1928dc; }
+@media(max-width:480px) { .login-layout { padding: 24px 16px; } .login-card { padding: 28px 22px; } h1 { font-size: 23px; } }
