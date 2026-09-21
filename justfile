@@ -18,6 +18,10 @@ bootstrap:
     just env
     uv run -m query_service.bootstrap_staff
 
+seed:
+    just env
+    uv run -m query_service.seed_demo
+
 run:
     just env
     just up
