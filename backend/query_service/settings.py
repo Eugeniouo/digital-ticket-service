@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     db_base: str = "query_service"
     db_echo: bool = False
 
-    # Queue priority
+    # Defaults for new departments. Live rules are stored on department rows.
     queue_timezone: str = "Europe/Moscow"
     queue_bonus_web: int = 300
     queue_bonus_qr: int = 0

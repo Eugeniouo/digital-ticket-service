@@ -25,3 +25,6 @@ class DepartmentRepository:
         self.session.add(department)
         await self.session.flush()
         return department
+
+    async def save(self) -> None:
+        await self.session.flush()

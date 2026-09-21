@@ -14,16 +14,13 @@ from query_service.modules.notifications.repository import NotificationRepositor
 from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.repository import SlotsRepository
-from query_service.modules.tickets.priority import (
-    BONUS_SECONDS,
-    MAX_WAIT_SECONDS,
-    now_priority_seconds,
-)
+from query_service.modules.tickets.priority import now_priority_seconds
 from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import EmptyQueueError, TicketAlreadyInProgressError
 from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.service import WindowsService
+from query_service.settings import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -358,11 +355,10 @@ async def test_assign_next_ticket_ignores_ticket_for_another_window_slot(
     dbsession.add(slot)
     await dbsession.flush()
 
-    # WEB должен быть eligible, иначе тест проверял бы сразу две разные причины.
-    web_bonus = BONUS_SECONDS[TicketSource.WEB]
-    web_max_wait = MAX_WAIT_SECONDS[TicketSource.WEB]
+    # WEB due: slot start (priority_key) is in the past and within max_wait.
+    web_max_wait = settings.queue_max_wait_web
 
-    web_priority = now - web_bonus - web_max_wait // 2
+    web_priority = now - web_max_wait // 2
 
     wrong_window = make_ticket(
         department_id=queue_context.department.id,
@@ -445,13 +441,10 @@ async def test_assign_next_ticket_accepts_due_web_ticket(
 ) -> None:
     now = now_priority_seconds()
 
-    web_bonus = BONUS_SECONDS[TicketSource.WEB]
-    web_max_wait = MAX_WAIT_SECONDS[TicketSource.WEB]
+    web_max_wait = settings.queue_max_wait_web
 
-    # Находимся внутри диапазона:
-    # priority <= now - bonus       -> ticket due
-    # priority >= now - max - bonus -> ticket not expired
-    priority_key = now - web_bonus - web_max_wait // 2
+    # Slot start is in the past and still within max_wait.
+    priority_key = now - web_max_wait // 2
 
     ticket = make_ticket(
         department_id=queue_context.department.id,
@@ -480,10 +473,9 @@ async def test_assign_next_ticket_rejects_web_noshow(
 ) -> None:
     now = now_priority_seconds()
 
-    web_bonus = BONUS_SECONDS[TicketSource.WEB]
-    web_max_wait = MAX_WAIT_SECONDS[TicketSource.WEB]
+    web_max_wait = settings.queue_max_wait_web
 
-    priority_key = now - web_max_wait - web_bonus - 1
+    priority_key = now - web_max_wait - 1
 
     ticket = make_ticket(
         department_id=queue_context.department.id,
@@ -520,14 +512,13 @@ async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
         label="wrong-service",
     )
 
-    web_bonus = BONUS_SECONDS[TicketSource.WEB]
-    web_max_wait = MAX_WAIT_SECONDS[TicketSource.WEB]
+    web_max_wait = settings.queue_max_wait_web
 
     expired_web = make_ticket(
         department_id=queue_context.department.id,
         service_id=queue_context.service.id,
         source=TicketSource.WEB,
-        priority_key=now - web_max_wait - web_bonus - 1,
+        priority_key=now - web_max_wait - 1,
         created_at=datetime.now(UTC),
         label="expired-web",
     )

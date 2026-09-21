@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
-from sqlalchemy import Boolean, String, Time, Uuid, true
+from sqlalchemy import Boolean, Integer, String, Time, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -49,6 +49,13 @@ class Department(Base):
         default=True,
         server_default=true(),
     )
+
+    queue_bonus_web: Mapped[int] = mapped_column(Integer, nullable=False, default=300, server_default="300")
+    queue_bonus_qr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    queue_bonus_walk_in: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    queue_max_wait_web: Mapped[int] = mapped_column(Integer, nullable=False, default=900, server_default="900")
+    queue_max_wait_qr: Mapped[int] = mapped_column(Integer, nullable=False, default=1200, server_default="1200")
+    queue_max_wait_walk_in: Mapped[int] = mapped_column(Integer, nullable=False, default=1200, server_default="1200")
 
     services: Mapped[list[Service]] = relationship(
         back_populates="department",

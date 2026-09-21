@@ -11,6 +11,8 @@ from query_service.database.models.ticket import Ticket, TicketStatus
 from query_service.database.models.ticket_labels import TicketCounter
 from query_service.database.models.ticket_status_history import TicketStatusHistory
 from query_service.modules.tickets.priority import (
+    effective_priority,
+    effective_priority_sql,
     now_in_queue_tz,
     now_priority_seconds,
     overdue_live_rank,
@@ -18,6 +20,7 @@ from query_service.modules.tickets.priority import (
     queue_eligible_sql,
     web_noshow_sql,
 )
+from query_service.modules.tickets.queue_rules import load_queue_rules
 
 
 class TicketRepository:
@@ -57,6 +60,7 @@ class TicketRepository:
     async def select_locked_web_noshows(self, department_id: UUID) -> list[Ticket]:
         """Lock QUEUED WEB tickets past no-show for this department."""
         now_seconds = now_priority_seconds()
+        rules = await load_queue_rules(self.session, department_id)
 
         return list(
             await self.session.scalars(
@@ -64,7 +68,7 @@ class TicketRepository:
                 .where(
                     Ticket.department_id == department_id,
                     Ticket.status == TicketStatus.QUEUED,
-                    web_noshow_sql(now_seconds),
+                    web_noshow_sql(now_seconds, rules),
                 )
                 .with_for_update(skip_locked=True),
             ),
@@ -73,21 +77,24 @@ class TicketRepository:
     async def count_tickets_before(self, target_ticket: Ticket) -> int:
         """
         Count QUEUED tickets ahead for the same service, using assign_next order:
-        eligible only, then overdue_live, priority_key, created_at.
+        eligible only, then overdue_live, effective priority, created_at.
         """
         now_seconds = now_priority_seconds()
-        overdue = overdue_live_sql(now_seconds)
-        target_rank = overdue_live_rank(target_ticket.source, target_ticket.priority_key, now_seconds)
+        rules = await load_queue_rules(self.session, target_ticket.department_id)
+        overdue = overdue_live_sql(now_seconds, rules)
+        effective = effective_priority_sql(rules)
+        target_rank = overdue_live_rank(target_ticket.source, target_ticket.priority_key, rules, now_seconds)
+        target_effective = effective_priority(target_ticket.priority_key, target_ticket.source, rules)
 
         ahead = or_(
             overdue < target_rank,
             and_(
                 overdue == target_rank,
-                Ticket.priority_key < target_ticket.priority_key,
+                effective < target_effective,
             ),
             and_(
                 overdue == target_rank,
-                Ticket.priority_key == target_ticket.priority_key,
+                effective == target_effective,
                 Ticket.created_at < target_ticket.created_at,
             ),
         )
@@ -97,7 +104,7 @@ class TicketRepository:
             Ticket.service_id == target_ticket.service_id,
             Ticket.status == TicketStatus.QUEUED,
             Ticket.id != target_ticket.id,
-            queue_eligible_sql(now_seconds),
+            queue_eligible_sql(now_seconds, rules),
             ahead,
         )
 
@@ -107,13 +114,16 @@ class TicketRepository:
         """Load eligible QUEUED tickets for the given services in this department."""
         if not service_ids:
             return []
+
         now_seconds = now_priority_seconds()
+        rules = await load_queue_rules(self.session, department_id)
+
         result = await self.session.scalars(
             select(Ticket).where(
                 Ticket.department_id == department_id,
                 Ticket.status == TicketStatus.QUEUED,
                 Ticket.service_id.in_(service_ids),
-                queue_eligible_sql(now_seconds),
+                queue_eligible_sql(now_seconds, rules),
             ),
         )
         return list(result.all())

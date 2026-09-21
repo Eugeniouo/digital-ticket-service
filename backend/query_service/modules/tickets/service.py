@@ -31,6 +31,7 @@ from query_service.modules.tickets.priority import (
     is_queue_eligible,
     now_in_queue_tz,
 )
+from query_service.modules.tickets.queue_rules import load_queue_rules
 from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
 from query_service.modules.tickets.schema import TicketCreateRequest, TicketResponse, TicketStatusHistoryResponse
 from query_service.settings import settings
@@ -118,7 +119,7 @@ class TicketService:
             effective_start = datetime.combine(slot.slot_date, slot.slot_time, tzinfo=QUEUE_TIMEZONE)
             slot_id = request.slot_id
 
-        priority_key = compute_priority_key(request.source, effective_start)
+        priority_key = compute_priority_key(effective_start)
 
         prefix = self._get_category_prefix(service.name)
         next_number = await self.repository.get_next_ticket_number(department_id, prefix)
@@ -166,7 +167,8 @@ class TicketService:
         estimated_wait_minutes = 0
 
         # Compute Estimated Time of Arrival
-        if ticket.status == TicketStatus.QUEUED and is_queue_eligible(ticket.source, ticket.priority_key):
+        rules = await load_queue_rules(self.repository.session, department_id)
+        if ticket.status == TicketStatus.QUEUED and is_queue_eligible(ticket.source, ticket.priority_key, rules):
             tickets_ahead = await self.repository.count_tickets_before(ticket)
 
             service = await self.service_repo.get_by_id(ticket.service_id)
