@@ -33,6 +33,7 @@ def visit(
     started: datetime | None,
     completed: datetime,
     *,
+    called: datetime | None = None,
     slot_day: date | None = None,
     slot_at: time | None = None,
 ) -> CompletedVisit:
@@ -40,13 +41,14 @@ def visit(
         ticket_id=ticket_id,
         source=source,
         started_at=started,
+        called_at=called,
         completed_at=completed,
         slot_date=slot_day,
         slot_time=slot_at,
     )
 
 
-def event(
+def event(  # noqa: PLR0917
     ticket_id: UUID,
     status: TicketStatus,
     reason: TicketStatusChangeReason,
@@ -382,6 +384,24 @@ def test_load_ratio_rounds_half_up_to_four_digits() -> None:
     assert done.windows[0].schedule_open_seconds == 6
     assert done.windows[0].served_seconds == 1
     assert done.windows[0].load_ratio == 0.1667
+
+
+def test_completion_without_start_counts_the_call() -> None:
+    ticket = UUID(int=117)
+    done = report(
+        completed=[visit(ticket, TicketSource.WALK_IN, None, at(DAY, 10, 12), called=at(DAY, 10, 4))],
+        history=[
+            event(ticket, TicketStatus.QUEUED, TicketStatusChangeReason.ISSUED, at(DAY, 10, 0), 1),
+            event(ticket, TicketStatus.CALLED, TicketStatusChangeReason.CALLED, at(DAY, 10, 4), 2, WINDOW_A),
+            event(ticket, TicketStatus.COMPLETED, TicketStatusChangeReason.COMPLETED, at(DAY, 10, 12), 3, WINDOW_A),
+        ],
+    )
+
+    assert done.served_count == 1
+    assert done.avg_wait_seconds == 4 * 60
+    assert done.max_wait_seconds == 4 * 60
+    assert done.avg_service_seconds == 8 * 60
+    assert done.windows[0].served_seconds == 8 * 60
 
 
 def test_windows_are_ordered_by_label_and_idle_ones_stay() -> None:

@@ -31,6 +31,14 @@ class TicketStatus(StrEnum):
     CANCELED = "canceled"
 
 
+_TICKET_SOURCE = Enum(
+    TicketSource,
+    name="ticket_source",
+    # типизация для Enum типа
+    values_callable=lambda members: [item.value for item in members],
+)
+
+
 class Ticket(Base):
     __tablename__ = "tickets"
 
@@ -59,13 +67,18 @@ class Ticket(Base):
     )
 
     source: Mapped[TicketSource] = mapped_column(
-        Enum(
-            TicketSource,
-            name="ticket_source",
-            # типизация для Enum типа
-            values_callable=lambda members: [item.value for item in members],
-        ),
+        _TICKET_SOURCE,
         nullable=False,
+    )
+
+    # If we redirect the client, source and slot_id are lost. These keep the values from issue.
+    origin_source: Mapped[TicketSource | None] = mapped_column(
+        _TICKET_SOURCE,
+        nullable=True,
+    )
+
+    origin_slot_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("slot.id"),
     )
 
     status: Mapped[TicketStatus] = mapped_column(
@@ -114,6 +127,7 @@ class Ticket(Base):
 
     slot: Mapped[Slot | None] = relationship(
         back_populates="tickets",
+        foreign_keys=[slot_id],
     )
 
     window: Mapped[Window | None] = relationship(

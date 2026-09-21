@@ -72,6 +72,7 @@ class Slot(Base):
 
     tickets: Mapped[list[Ticket]] = relationship(
         back_populates="slot",
+        foreign_keys="Ticket.slot_id",
         lazy="selectin",
     )
 

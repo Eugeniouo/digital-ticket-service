@@ -38,6 +38,7 @@ class CompletedVisit:
     ticket_id: UUID
     source: TicketSource
     started_at: datetime | None
+    called_at: datetime | None
     completed_at: datetime
     slot_date: date | None
     slot_time: time | None
@@ -227,9 +228,11 @@ def _wait_samples(
 def _service_samples(completed: Sequence[CompletedVisit]) -> list[int]:
     samples: list[int] = []
     for ticket in completed:
-        if ticket.started_at is None:
+        started = ticket.started_at if ticket.started_at is not None else ticket.called_at
+        if started is None:
             continue
-        samples.append(_elapsed_seconds(ticket.started_at, ticket.completed_at))
+
+        samples.append(_elapsed_seconds(started, ticket.completed_at))
 
     return samples
 
@@ -239,7 +242,10 @@ def _last_wait_seconds(
     events: Sequence[HistoryPoint],
     tz: ZoneInfo,
 ) -> int | None:
-    """Wait of the visit that finished the ticket, from queue entry until service start."""
+    """Wait of the visit that finished the ticket, from queue entry until service start.
+
+    A visit completed from called, without serving, ends the wait at the call.
+    """
     if not events:
         return None
 
@@ -248,6 +254,8 @@ def _last_wait_seconds(
         return None
 
     started_index = _rfind_status(events, completed_index - 1, TicketStatus.SERVING)
+    if started_index is None:
+        started_index = _rfind_status(events, completed_index - 1, TicketStatus.CALLED)
     if started_index is None or started_index == 0:
         return None
 
@@ -300,14 +308,20 @@ def _serving_seconds(
     bound_end: datetime,
     now: datetime,
 ) -> dict[UUID, int]:
-    """Every serving segment overlapping the day, including ones cleared off the ticket."""
+    """Serving time overlapping the day, including visits cleared off the ticket.
+
+    A completion that never entered serving counts from the call until completion.
+    """
     totals: dict[UUID, int] = {}
     for events in grouped.values():
         for index, event in enumerate(events):
-            if event.new_status != TicketStatus.SERVING or event.window_id is None:
+            if event.window_id is None:
                 continue
 
-            segment_end = events[index + 1].changed_at if index + 1 < len(events) else now
+            segment_end = _window_segment_end(events, index, now)
+            if segment_end is None:
+                continue
+
             seconds = _overlap_seconds(event.changed_at, segment_end, bound_start, bound_end)
             if seconds == 0:
                 continue
@@ -315,6 +329,23 @@ def _serving_seconds(
             totals[event.window_id] = totals.get(event.window_id, 0) + seconds
 
     return totals
+
+
+def _window_segment_end(events: Sequence[HistoryPoint], index: int, now: datetime) -> datetime | None:
+    event = events[index]
+    if event.new_status == TicketStatus.SERVING:
+        if index + 1 < len(events):
+            return events[index + 1].changed_at
+
+        return now
+
+    if event.new_status != TicketStatus.CALLED or index + 1 >= len(events):
+        return None
+
+    if events[index + 1].new_status != TicketStatus.COMPLETED:
+        return None
+
+    return events[index + 1].changed_at
 
 
 def _group_history(events: Sequence[HistoryPoint]) -> dict[UUID, list[HistoryPoint]]:

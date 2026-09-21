@@ -177,6 +177,41 @@ async def test_arrivals_use_slot_date_for_appointments_and_issue_time_otherwise(
     assert tomorrow.get(TicketSource.QR, 0) == 0
 
 
+async def test_redirect_keeps_the_channel_from_issue(dbsession: AsyncSession) -> None:
+    department, service, window = await _office(dbsession, "Redirect")
+    slot = Slot(window_id=window.id, service_id=service.id, slot_date=DAY, slot_time=time(10, 0))
+    dbsession.add(slot)
+    await dbsession.flush()
+
+    start, end = day_bounds(DAY, MOSCOW)
+    appointment = _ticket(
+        department.id,
+        service.id,
+        TicketSource.WALK_IN,
+        "W-9",
+        datetime(2026, 9, 19, 9, 0, tzinfo=MOSCOW),
+        slot_id=None,
+    )
+    appointment.origin_source = TicketSource.WEB
+    appointment.origin_slot_id = slot.id
+    qr = _ticket(
+        department.id,
+        service.id,
+        TicketSource.WALK_IN,
+        "Q-9",
+        datetime(2026, 9, 21, 15, 0, tzinfo=MOSCOW),
+    )
+    qr.origin_source = TicketSource.QR
+    dbsession.add_all([appointment, qr])
+    await dbsession.flush()
+
+    counts = await AnalyticsRepository(dbsession).count_arrivals(department.id, DAY, start, end)
+
+    assert counts[TicketSource.WEB] == 1
+    assert counts[TicketSource.QR] == 1
+    assert counts.get(TicketSource.WALK_IN, 0) == 0
+
+
 async def test_history_keeps_a_start_older_than_the_one_day_margin(dbsession: AsyncSession) -> None:
     department, service, window = await _office(dbsession, "Margin")
     started_at = datetime(2026, 9, 19, 15, 0, tzinfo=UTC)

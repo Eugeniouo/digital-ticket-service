@@ -51,6 +51,7 @@ class AnalyticsRepository:
                     ticket_id=ticket.id,
                     source=ticket.source,
                     started_at=ticket.started_at,
+                    called_at=ticket.called_at,
                     completed_at=completed_at,
                     slot_date=slot_date,
                     slot_time=slot_time,
@@ -66,26 +67,31 @@ class AnalyticsRepository:
         day_start: datetime,
         day_end: datetime,
     ) -> dict[TicketSource, int]:
-        """Appointments by slot date; QR and walk-in by the moment the ticket was issued."""
+        """Appointments by the slot from issue; QR and walk-in by the moment the ticket was issued.
+
+        Redirect overwrites `source` and `slot_id`. The issued channel stays on `origin_*`.
+        """
+        channel = func.coalesce(Ticket.origin_source, Ticket.source)
+        issued_slot_id = func.coalesce(Ticket.origin_slot_id, Ticket.slot_id)
         web_stmt = (
             select(func.count())
             .select_from(Ticket)
-            .join(Slot, Slot.id == Ticket.slot_id)
+            .join(Slot, Slot.id == issued_slot_id)
             .where(
                 Ticket.department_id == department_id,
-                Ticket.source == TicketSource.WEB,
+                channel == TicketSource.WEB,
                 Slot.slot_date == day,
             )
         )
         live_stmt = (
-            select(Ticket.source, func.count())
+            select(channel, func.count())
             .where(
                 Ticket.department_id == department_id,
-                Ticket.source.in_((TicketSource.QR, TicketSource.WALK_IN)),
+                channel.in_((TicketSource.QR, TicketSource.WALK_IN)),
                 Ticket.created_at >= day_start,
                 Ticket.created_at < day_end,
             )
-            .group_by(Ticket.source)
+            .group_by(channel)
         )
 
         counts: dict[TicketSource, int] = {TicketSource.WEB: int(await self.session.scalar(web_stmt) or 0)}
