@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     bootstrap_username: str = ""
     bootstrap_password: str = ""
 
+    cors_origins: list[str] = ["http://localhost:4173"]
+
     @property
     def db_url(self) -> URL:
         """
