@@ -20,6 +20,7 @@ def staff_to_dto(staff: Staff) -> StaffDTO:
     return StaffDTO(
         id=staff.id,
         username=staff.username,
+        display_name=staff.display_name,
         role=staff.role,
         department_id=staff.department_id,
         is_active=staff.is_active,
@@ -63,6 +64,7 @@ class AuthService:
 
         staff = Staff(
             username=payload.username.strip(),
+            display_name=payload.display_name.strip(),
             password_hash=hash_password(payload.password.strip()),
             role=payload.role,
             department_id=department_id,

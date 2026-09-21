@@ -31,6 +31,7 @@ async def bootstrap_root() -> None:
             session.add(
                 Staff(
                     username=username,
+                    display_name=username,
                     password_hash=hash_password(password),
                     role=StaffRole.ROOT,
                     department_id=None,
