@@ -89,7 +89,9 @@ async def test_root_gets_404_for_a_missing_department(client: AsyncClient, fasta
 
 
 @pytest.mark.parametrize("department_id", ["not-a-uuid", "123"])
-async def test_invalid_department_id(client: AsyncClient, department_id: str) -> None:
+async def test_invalid_department_id(client: AsyncClient, fastapi_app: FastAPI, department_id: str) -> None:
+    _install_staff(fastapi_app, _staff(StaffRole.ROOT, None))
+
     response = await client.get(f"/api/departments/{department_id}/analytics")
 
     assert response.status_code == 422
