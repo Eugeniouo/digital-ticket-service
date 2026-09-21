@@ -101,6 +101,21 @@ See `.env.example` for a starter file.
 
 Staff sign-in is `POST /api/auth/signin`. The migrator creates a `root` account when bootstrap username and password are set and that username does not exist yet.
 
+After `docker compose up` the catalog is empty: `GET /api/departments` returns `[]` until you seed it. With the API already listening on port 8000:
+
+```bash
+just seed
+```
+
+That calls the public HTTP API as `root` and creates two departments (`DEMO01`, `DEMO02`), services, windows with service bindings, department `admin` / `operator` accounts, and generated slots for today and tomorrow (Europe/Moscow). It is idempotent.
+
+Demo staff passwords match `QUERY_SERVICE_BOOTSTRAP_PASSWORD` unless `QUERY_SERVICE_SEED_STAFF_PASSWORD` is set:
+
+| username | role |
+|---|---|
+| `admin-demo01` / `admin-demo02` | admin |
+| `operator-demo01` / `operator-demo02` | operator |
+
 You can read more about BaseSettings class here: [https://pydantic-docs.helpmanual.io/usage/settings/](https://pydantic-docs.helpmanual.io/usage/settings/)
 
 ## Pre-commit

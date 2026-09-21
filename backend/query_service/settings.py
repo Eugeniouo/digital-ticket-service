@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     jwt_ttl_seconds: int = 43200  # 12 hours
     bootstrap_username: str = ""
     bootstrap_password: str = ""
+    seed_api_url: str = "http://127.0.0.1:8000"
+    seed_staff_password: str = ""
 
     cors_origins: list[str] = ["http://localhost:4173"]
 
