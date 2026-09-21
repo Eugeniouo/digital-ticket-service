@@ -292,6 +292,12 @@ class WindowsService:
         if not service.is_active:
             raise InactiveServiceError
 
+        # Keep the channel from issue. The lines below overwrite source and slot_id.
+        if ticket.origin_source is None:
+            ticket.origin_source = ticket.source
+        if ticket.origin_slot_id is None:
+            ticket.origin_slot_id = ticket.slot_id
+
         # We drop the appointment and become walk-in for the new service
         slot_id = ticket.slot_id
         ticket.service_id = payload.service_id

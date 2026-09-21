@@ -323,6 +323,8 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
             slot_id=slot_id,
             service_id=uuid4(),
             source=TicketSource.WEB,
+            origin_source=None,
+            origin_slot_id=None,
             priority_key=1000,
         ),
     )
@@ -349,8 +351,19 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     assert ticket.service_id == service_id
     assert ticket.slot_id is None
     assert ticket.source == TicketSource.WALK_IN
+    assert ticket.origin_source == TicketSource.WEB
+    assert ticket.origin_slot_id == slot_id
     tickets.release_slot.assert_awaited_once_with(slot_id)
-    tickets.requeue.assert_awaited_once_with(
+
+    await svc.redirect(
+        department_id,
+        window_id,
+        WindowRedirectRequestDTO(service_id=service_id),
+    )
+
+    assert ticket.origin_source == TicketSource.WEB
+    assert ticket.origin_slot_id == slot_id
+    tickets.requeue.assert_awaited_with(
         ticket,
         0,
         TicketStatusChange(

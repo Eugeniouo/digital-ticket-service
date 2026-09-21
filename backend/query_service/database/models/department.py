@@ -32,6 +32,7 @@ class Department(Base):
         nullable=False,
     )
 
+    # TODO: store a timezone on each department. The calendar day, slots, and ticket numbers use settings.queue_timezone.
     open_time: Mapped[time] = mapped_column(
         Time,
         nullable=False,

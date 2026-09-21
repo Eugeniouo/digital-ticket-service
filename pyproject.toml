@@ -149,6 +149,7 @@ line-length = 140
 "backend/tests/*" = [
   "S101",    # Use of assert detected
   "S105",    # Hardcoded passwords in tests
+  "S106",    # Hardcoded password arguments in tests
   "PLC0415", # Import outside toplevel
 ]
 "tests/*" = [
