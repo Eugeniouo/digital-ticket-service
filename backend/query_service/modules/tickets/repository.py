@@ -157,7 +157,7 @@ class TicketStatusHistoryRepository:
         result = await self.session.scalars(
             select(TicketStatusHistory)
             .where(TicketStatusHistory.ticket_id == ticket_id)
-            .order_by(desc(TicketStatusHistory.changed_at))
+            .order_by(desc(TicketStatusHistory.changed_at), desc(TicketStatusHistory.id))
             .limit(limit)
         )
         return list(result.all())

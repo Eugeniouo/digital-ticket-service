@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import Depends
 
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
+from query_service.database.models.ticket_status_history import TicketStatusChangeReason
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
@@ -171,9 +172,18 @@ class WindowsService:
         if ticket is None:
             raise EmptyQueueError
 
+        old_status = ticket.status
         ticket.status = TicketStatus.CALLED
         ticket.window_id = locked.id
         ticket.called_at = datetime.now(UTC)
+        await self.tickets.record_status_change(
+            ticket,
+            old_status,
+            TicketStatus.CALLED,
+            TicketStatusChangeReason.CALLED,
+            staff_id=locked.current_operator_id,
+            window_id=locked.id,
+        )
         await self.repository.save()
 
         await self._enqueue_after_call(ticket, locked)
@@ -198,8 +208,17 @@ class WindowsService:
         if ticket is None:
             raise NoCalledTicketError
 
+        old_status = ticket.status
         ticket.status = TicketStatus.SERVING
         ticket.started_at = datetime.now(UTC)
+        await self.tickets.record_status_change(
+            ticket,
+            old_status,
+            TicketStatus.SERVING,
+            TicketStatusChangeReason.STARTED,
+            staff_id=window.current_operator_id,
+            window_id=window.id,
+        )
         await self.repository.save()
 
         return ticket
@@ -213,8 +232,17 @@ class WindowsService:
         if ticket is None:
             raise NoTicketInProgressError
 
+        old_status = ticket.status
         ticket.status = TicketStatus.COMPLETED
         ticket.completed_at = datetime.now(UTC)
+        await self.tickets.record_status_change(
+            ticket,
+            old_status,
+            TicketStatus.COMPLETED,
+            TicketStatusChangeReason.COMPLETED,
+            staff_id=window.current_operator_id,
+            window_id=window.id,
+        )
         await self.repository.save()
 
         return ticket
@@ -229,7 +257,13 @@ class WindowsService:
 
         elapsed = _elapsed_at_window_seconds(ticket)
 
-        return await self.tickets.requeue(ticket, elapsed)
+        return await self.tickets.requeue(
+            ticket,
+            elapsed,
+            reason=TicketStatusChangeReason.REQUEUED,
+            staff_id=window.current_operator_id,
+            window_id=window.id,
+        )
 
     async def redirect(
         self,
@@ -257,7 +291,13 @@ class WindowsService:
         ticket.priority_key = compute_priority_key(TicketSource.WALK_IN, now_in_queue_tz())
 
         elapsed = _elapsed_at_window_seconds(ticket)
-        requeued = await self.tickets.requeue(ticket, elapsed)
+        requeued = await self.tickets.requeue(
+            ticket,
+            elapsed,
+            reason=TicketStatusChangeReason.REDIRECTED,
+            staff_id=window.current_operator_id,
+            window_id=window.id,
+        )
 
         await self.tickets.release_slot(slot_id)
 

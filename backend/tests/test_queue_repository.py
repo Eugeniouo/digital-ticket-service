@@ -31,6 +31,7 @@ def call_next_service() -> tuple[WindowsService, Mock, Mock]:
 
     tickets = Mock(spec=TicketService)
     tickets.expire_web_noshows = AsyncMock()
+    tickets.record_status_change = AsyncMock()
 
     notifications = Mock()
     notifications.enqueue_called = AsyncMock()
@@ -58,6 +59,7 @@ def open_window() -> Window:
             services=[
                 SimpleNamespace(id=service_id),
             ],
+            current_operator_id=None,
         ),
     )
 

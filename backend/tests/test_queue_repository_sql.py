@@ -19,7 +19,7 @@ from query_service.modules.tickets.priority import (
     MAX_WAIT_SECONDS,
     now_priority_seconds,
 )
-from query_service.modules.tickets.repository import TicketRepository
+from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import EmptyQueueError, TicketAlreadyInProgressError
 from query_service.modules.windows.repository import WindowsRepository
@@ -41,6 +41,7 @@ def make_windows_service(dbsession: AsyncSession) -> WindowsService:
             service_repo=ServiceRepository(dbsession),
             slots_repo=SlotsRepository(dbsession),
             notifications=notifications,
+            history_repo=TicketStatusHistoryRepository(dbsession),
         ),
         services=ServiceRepository(dbsession),
         notifications=notifications,

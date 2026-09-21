@@ -17,7 +17,7 @@ from query_service.modules.notifications.worker import process_due_rows
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.slots.repository import SlotsRepository
 from query_service.modules.tickets.priority import now_priority_seconds
-from query_service.modules.tickets.repository import TicketRepository
+from query_service.modules.tickets.repository import TicketRepository, TicketStatusHistoryRepository
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.service import WindowsService
@@ -39,6 +39,7 @@ def _make_windows_service(dbsession: AsyncSession) -> WindowsService:
             service_repo=ServiceRepository(dbsession),
             slots_repo=SlotsRepository(dbsession),
             notifications=notifications,
+            history_repo=TicketStatusHistoryRepository(dbsession),
         ),
         services=ServiceRepository(dbsession),
         notifications=notifications,
