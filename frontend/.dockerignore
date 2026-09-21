@@ -1,0 +1,8 @@
+node_modules
+dist
+tests
+.git
+.netlify
+.env
+.env.*
+*.md

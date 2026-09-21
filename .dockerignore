@@ -1,5 +1,6 @@
 .git/
 .venv/
+# API image context is the repo root; frontend has its own Dockerfile context.
 frontend/
 node_modules/
 .env
