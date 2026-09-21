@@ -74,6 +74,9 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:4173"]
 
+    frontend_origin: str = "http://localhost:4173"
+    visitor_path: str = "/src/visitor.html"
+
     @property
     def db_url(self) -> URL:
         """

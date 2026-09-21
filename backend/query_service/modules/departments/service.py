@@ -63,9 +63,9 @@ class DepartmentService:
 
         return await self.repository.add(department)
 
-    async def get_qr(self, department_id: UUID, base_url: str) -> DepartmentQrDTO:
+    async def get_qr(self, department_id: UUID) -> DepartmentQrDTO:
         department = await self.get_by_id(department_id)
-        payload = department_qr_payload(base_url, department.id)
+        payload = department_qr_payload(department.id)
 
         return DepartmentQrDTO(
             department_id=department.id,

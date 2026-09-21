@@ -7,4 +7,4 @@ class DuplicateDepartmentCodeError(Exception):
 
 
 class InvalidQrBaseUrlError(Exception):
-    """QR base URL is not a public HTTPS origin."""
+    """Frontend origin is not an HTTP(S) URL with a host."""

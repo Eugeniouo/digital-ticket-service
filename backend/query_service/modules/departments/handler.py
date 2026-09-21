@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from query_service.database.models.department import Department
 from query_service.database.models.staff import Staff
@@ -61,24 +61,23 @@ async def get_department(department_id: UUID, svc: DepartmentService = Depends()
     response_model=DepartmentQrDTO,
     responses={
         404: {"description": "Department not found"},
-        422: {"description": "QR base URL is not a public HTTPS origin"},
+        422: {"description": "Frontend origin is not an HTTP(S) URL"},
     },
     summary="QR poster for visitors of this department",
 )
 async def get_department_qr(
     department_id: UUID,
-    base_url: str = Query(min_length=8),
     svc: DepartmentService = Depends(),
     _staff: Staff = Depends(require_admin),
 ) -> DepartmentQrDTO:
     try:
-        return await svc.get_qr(department_id, base_url)
+        return await svc.get_qr(department_id)
     except DepartmentNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found") from exc
     except InvalidQrBaseUrlError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="QR base URL must be a public HTTPS origin",
+            detail="Frontend origin must be an HTTP(S) URL with a host",
         ) from exc
 
 

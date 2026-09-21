@@ -1,32 +1,19 @@
-from urllib.parse import urlparse
 from uuid import UUID
 
 import segno
+from yarl import URL
 
 from query_service.modules.departments.exceptions import InvalidQrBaseUrlError
+from query_service.settings import settings
 
-VISITOR_PATH = "/src/visitor.html"
 
-
-def department_qr_payload(base_url: str, department_id: UUID) -> str:
-    parsed = urlparse(base_url.strip())
-    host = (parsed.hostname or "").lower()
-    if (
-        parsed.scheme != "https"
-        or parsed.username
-        or parsed.password
-        or not host
-        or host == "localhost"
-        or host.endswith(".localhost")
-        or host == "127.0.0.1"
-        or host.startswith("127.")
-        or host.startswith("0.")
-        or host in {"::1", "[::1]"}
-    ):
+def department_qr_payload(department_id: UUID) -> str:
+    origin = URL(settings.frontend_origin)
+    if origin.scheme not in {"http", "https"} or not origin.host:
         raise InvalidQrBaseUrlError
 
-    origin = f"https://{parsed.netloc}"
-    return f"{origin}{VISITOR_PATH}?department={department_id}"
+    path = settings.visitor_path if settings.visitor_path.startswith("/") else f"/{settings.visitor_path}"
+    return str(origin.with_path(path).with_query({"department": str(department_id)}))
 
 
 def render_qr_svg(payload: str) -> str:
