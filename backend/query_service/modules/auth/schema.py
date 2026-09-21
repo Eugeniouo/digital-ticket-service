@@ -1,12 +1,50 @@
+from typing import Annotated
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field
 
 from query_service.database.models.staff import StaffRole
 
-MAX_POSSIBLE_NAME = 50
+MIN_USERNAME = 3
+MAX_USERNAME = 40
+USERNAME_PATTERN = r"^[a-z0-9._-]+$"
 MAX_DISPLAY_NAME = 100
-MAX_POSSIBLE_PASSWORD = 128
+MIN_PASSWORD = 8
+MAX_PASSWORD = 128
+
+
+def _strip(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip()
+    return value
+
+
+def _normalize_username(value: object) -> object:
+    if isinstance(value, str):
+        return value.strip().lower()
+    return value
+
+
+Password = Annotated[
+    str,
+    BeforeValidator(_strip),
+    Field(min_length=MIN_PASSWORD, max_length=MAX_PASSWORD),
+]
+DisplayName = Annotated[
+    str,
+    BeforeValidator(_strip),
+    Field(min_length=1, max_length=MAX_DISPLAY_NAME),
+]
+SignInUsername = Annotated[
+    str,
+    BeforeValidator(_normalize_username),
+    Field(min_length=MIN_USERNAME, max_length=MAX_USERNAME, pattern=USERNAME_PATTERN),
+]
+CreateUsername = Annotated[
+    str,
+    BeforeValidator(_strip),
+    Field(min_length=MIN_USERNAME, max_length=MAX_USERNAME, pattern=USERNAME_PATTERN),
+]
 
 
 class StaffDTO(BaseModel):
@@ -25,8 +63,8 @@ class StaffDTO(BaseModel):
 class SignInRequest(BaseModel):
     """Login payload."""
 
-    username: str = Field(min_length=1, max_length=MAX_POSSIBLE_NAME)
-    password: str = Field(min_length=1, max_length=MAX_POSSIBLE_PASSWORD)
+    username: SignInUsername
+    password: Password
 
 
 class TokenResponse(BaseModel):
@@ -40,9 +78,14 @@ class TokenResponse(BaseModel):
 class StaffCreateRequest(BaseModel):
     """Create a staff account."""
 
-    # perform strip for UX convenience outside of validation
-    username: str = Field(min_length=1, max_length=MAX_POSSIBLE_NAME)
-    display_name: str = Field(min_length=1, max_length=MAX_DISPLAY_NAME)
-    password: str = Field(min_length=1, max_length=MAX_POSSIBLE_PASSWORD)
+    username: CreateUsername
+    display_name: DisplayName
+    password: Password
     role: StaffRole
     department_id: UUID | None = None
+
+
+class StaffPasswordChangeRequest(BaseModel):
+    """Set a new password for a staff account."""
+
+    password: Password

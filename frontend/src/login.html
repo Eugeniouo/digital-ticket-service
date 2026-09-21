@@ -16,9 +16,9 @@
         <p class="description">Войдите в рабочее пространство отделения</p>
         <form id="login-form">
           <label for="login">Логин</label>
-          <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required maxlength="100" autocapitalize="none" spellcheck="false">
+          <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required minlength="3" maxlength="40" autocapitalize="none" spellcheck="false">
           <label for="password">Пароль</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required maxlength="200">
+          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required minlength="8" maxlength="128">
           <p id="login-error" class="error" role="alert"></p>
           <button class="login-submit" type="submit">Войти</button>
         </form>

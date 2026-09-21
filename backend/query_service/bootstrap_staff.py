@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 async def bootstrap_root() -> None:
-    username = settings.bootstrap_username.strip()
+    username = settings.bootstrap_username.strip().lower()
     password = settings.bootstrap_password.strip()
     if not username or not password:
         logger.warning("root username or password are not set. ensure you have them in env")

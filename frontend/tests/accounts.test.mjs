@@ -1,24 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOperator, initializeManager, listOperators, authenticate, changePassword, changeBranch } from '../src/operator-accounts.js';
+import { createOperator, initializeManager, listOperators, authenticate, changePassword } from '../src/operator-accounts.js';
 
-test('operator creation, duplicate check, password and branch changes', async () => {
+test('operator creation, duplicate check and password change', async () => {
   const values = new Map();
   globalThis.localStorage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
-  await createOperator({ login: 'test.operator', name: 'Демо', branch: '369000', password: 'test-pass-1' });
+  await createOperator({ username: 'test.operator', display_name: 'Демо', department_id: '369000', password: 'test-pass-1' });
   const [account] = listOperators();
   assert.equal(await authenticate('TEST.OPERATOR', 'test-pass-1'), account.id);
+  assert.equal(account.username, 'test.operator');
+  assert.equal(account.display_name, 'Демо');
+  assert.equal(account.department_id, '369000');
+  assert.equal(account.role, 'operator');
+  assert.equal(account.is_active, true);
   assert.ok(!JSON.stringify(account).includes('test-pass-1'));
   await assert.rejects(authenticate('test.operator', 'wrong'));
-  await assert.rejects(createOperator({ login: 'test.operator', name: 'Демо', branch: '369000', password: 'test-pass-1' }));
+  await assert.rejects(createOperator({ username: 'test.operator', display_name: 'Демо', department_id: '369000', password: 'test-pass-1' }));
+  await assert.rejects(createOperator({ username: 'ab', display_name: 'Демо', department_id: '369000', password: 'test-pass-1' }));
+  await assert.rejects(createOperator({ username: 'bad user', display_name: 'Демо', department_id: '369000', password: 'test-pass-1' }));
+  await assert.rejects(createOperator({ username: 'ok.user', display_name: 'Демо', department_id: '369000', password: 'short' }));
+  await assert.rejects(createOperator({ username: 'ok.user', display_name: 'Демо', department_id: 'unknown', password: 'test-pass-1' }));
   await changePassword(account.id, 'test-pass-2');
   await assert.rejects(authenticate('test.operator', 'test-pass-1'));
   assert.equal(await authenticate('test.operator', 'test-pass-2'), account.id);
-  changeBranch(account.id, '369001');
-  assert.equal(listOperators()[0].branch, '369001');
-  assert.throws(() => changeBranch(account.id, 'unknown'));
-  assert.equal(account.role, 'operator');
-  await initializeManager({ login: 'test.manager', name: 'Руководитель', branch: '369000', password: 'manager-test' });
-  assert.equal(listOperators().find(item => item.login === 'test.manager').role, 'manager');
-  await assert.rejects(initializeManager({ login: 'another.manager', name: 'Другой', branch: '369000', password: 'manager-test' }));
+  await initializeManager({ username: 'test.manager', display_name: 'Руководитель', department_id: '369000', password: 'manager-test' });
+  assert.equal(listOperators().find(item => item.username === 'test.manager').role, 'admin');
+  await assert.rejects(initializeManager({ username: 'another.manager', display_name: 'Другой', department_id: '369000', password: 'manager-test' }));
 });

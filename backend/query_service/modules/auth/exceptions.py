@@ -20,3 +20,7 @@ class StaffCreateForbiddenError(Exception):
 
 class DepartmentNotFoundError(Exception):
     """Department does not exist."""
+
+
+class StaffNotFoundError(Exception):
+    """Staff account does not exist."""

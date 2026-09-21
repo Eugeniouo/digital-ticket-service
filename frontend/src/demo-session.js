@@ -16,5 +16,5 @@ export function signOut() {
 }
 
 export function staffDestination(role) {
-  return `/src/staff.html?role=${role === 'manager' ? 'manager' : 'operator'}`;
+  return `/src/staff.html?role=${role === 'admin' ? 'admin' : 'operator'}`;
 }

@@ -4,7 +4,7 @@ import { branches } from './mock-data.js';
 const site = document.querySelector('#site-url');
 const branch = document.querySelector('#qr-branch');
 const message = document.querySelector('#qr-message');
-branches.filter(item => item.id === currentOperator().branch).forEach(item => branch.add(new Option(`№ ${item.id} · ${item.address}`, item.id)));
+branches.filter(item => item.id === currentOperator().department_id).forEach(item => branch.add(new Option(`№ ${item.id} · ${item.address}`, item.id)));
 branch.disabled = true;
 if (location.protocol === 'https:') site.value = location.origin;
 document.querySelector('#generate').addEventListener('click', () => {

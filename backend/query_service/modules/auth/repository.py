@@ -45,3 +45,6 @@ class StaffRepository:
             raise DuplicateUsernameError from exc
 
         return staff
+
+    async def save(self) -> None:
+        await self.session.flush()
