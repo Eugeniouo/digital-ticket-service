@@ -38,7 +38,6 @@ def _staff(role: StaffRole, department_id: UUID | None) -> Staff:
 
 async def _department(session: AsyncSession) -> Department:
     department = Department(
-        name=f"Analytics {uuid4()}",
         address="Street",
         open_time=time(9),
         close_time=time(18),

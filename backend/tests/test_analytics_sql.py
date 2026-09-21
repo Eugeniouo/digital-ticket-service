@@ -18,7 +18,6 @@ DAY = date(2026, 9, 21)
 
 async def _office(session: AsyncSession, name: str) -> tuple[Department, Service, Window]:
     department = Department(
-        name=f"{name} {uuid4()}",
         address="Street",
         open_time=time(9),
         close_time=time(18),

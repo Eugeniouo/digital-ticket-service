@@ -15,8 +15,15 @@ async def test_empty_departments(client: AsyncClient) -> None:
 
 async def test_list_and_detail(client: AsyncClient, dbsession: AsyncSession) -> None:
     departments = [
-        Department(id=UUID(int=index), name=name, address=f"Street {index}", open_time=time(9), close_time=time(18), is_active=active)
-        for index, name, active in [(2, "B Office", False), (3, "A Office", True), (1, "B Office", True)]
+        Department(
+            id=UUID(int=index),
+            code=f"{index:06d}",
+            address=f"Street {index}",
+            open_time=time(9),
+            close_time=time(18),
+            is_active=active,
+        )
+        for index, active in [(2, False), (3, True), (1, True)]
     ]
     dbsession.add_all(departments)
     await dbsession.flush()
@@ -27,13 +34,13 @@ async def test_list_and_detail(client: AsyncClient, dbsession: AsyncSession) -> 
     assert response.json() == [
         {
             "id": str(UUID(int=index)),
-            "name": name,
+            "code": f"{index:06d}",
             "address": f"Street {index}",
             "open_time": "09:00:00",
             "close_time": "18:00:00",
             "is_active": active,
         }
-        for index, name, active in [(3, "A Office", True), (1, "B Office", True), (2, "B Office", False)]
+        for index, active in [(1, True), (2, False), (3, True)]
     ]
     for item in response.json():
         detail = await client.get(f"/api/departments/{item['id']}")
@@ -54,7 +61,12 @@ async def test_invalid_department_id(client: AsyncClient, department_id: str) ->
 
 
 async def test_department_defaults(client: AsyncClient, dbsession: AsyncSession) -> None:
-    department = Department(name="Почта № 1", address="ул. Мира, 1", open_time=time(22), close_time=time(6))
+    department = Department(
+        code="369000",
+        address="ул. Мира, 1",
+        open_time=time(22),
+        close_time=time(6),
+    )
     dbsession.add(department)
     await dbsession.flush()
     department_id = department.id
@@ -66,7 +78,7 @@ async def test_department_defaults(client: AsyncClient, dbsession: AsyncSession)
     assert response.status_code == 200
     assert response.json() == {
         "id": str(department_id),
-        "name": "Почта № 1",
+        "code": "369000",
         "address": "ул. Мира, 1",
         "open_time": "22:00:00",
         "close_time": "06:00:00",
@@ -79,7 +91,7 @@ async def test_create_department(client: AsyncClient) -> None:
     response = await client.post(
         "/api/departments",
         json={
-            "name": "Почта № 2",
+            "code": "369001",
             "address": "ул. Ленина, 10",
             "open_time": "09:00:00",
             "close_time": "18:00:00",
@@ -87,7 +99,7 @@ async def test_create_department(client: AsyncClient) -> None:
     )
     assert response.status_code == 201
     body = response.json()
-    assert body["name"] == "Почта № 2"
+    assert body["code"] == "369001"
     assert body["address"] == "ул. Ленина, 10"
     assert body["open_time"] == "09:00:00"
     assert body["close_time"] == "18:00:00"
@@ -104,7 +116,7 @@ async def test_create_department_inactive(client: AsyncClient) -> None:
     response = await client.post(
         "/api/departments",
         json={
-            "name": "Закрытое",
+            "code": "369002",
             "address": "ул. Ночная, 1",
             "open_time": "22:00:00",
             "close_time": "06:00:00",

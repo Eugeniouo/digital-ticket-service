@@ -4,8 +4,14 @@ from fastapi import Depends
 
 from query_service.database.models.department import Department
 from query_service.modules.departments.exceptions import DepartmentNotFoundError
+from query_service.modules.departments.qr import department_qr_payload, render_qr_svg
 from query_service.modules.departments.repository import DepartmentRepository
-from query_service.modules.departments.schema import DepartmentCreateRequestDTO, QueueRulesDTO, QueueRulesUpdateDTO
+from query_service.modules.departments.schema import (
+    DepartmentCreateRequestDTO,
+    DepartmentQrDTO,
+    QueueRulesDTO,
+    QueueRulesUpdateDTO,
+)
 from query_service.modules.tickets.queue_rules import QueueRules, default_queue_rules, queue_rules_from_department
 
 
@@ -42,7 +48,7 @@ class DepartmentService:
         rules = default_queue_rules()
 
         department = Department(
-            name=payload.name,
+            code=payload.code,
             address=payload.address,
             open_time=payload.open_time,
             close_time=payload.close_time,
@@ -56,6 +62,18 @@ class DepartmentService:
         )
 
         return await self.repository.add(department)
+
+    async def get_qr(self, department_id: UUID, base_url: str) -> DepartmentQrDTO:
+        department = await self.get_by_id(department_id)
+        payload = department_qr_payload(base_url, department.id)
+
+        return DepartmentQrDTO(
+            department_id=department.id,
+            code=department.code,
+            address=department.address,
+            payload=payload,
+            svg=render_qr_svg(payload),
+        )
 
     async def get_queue_rules(self, department_id: UUID) -> QueueRulesDTO:
         department = await self.get_by_id(department_id)

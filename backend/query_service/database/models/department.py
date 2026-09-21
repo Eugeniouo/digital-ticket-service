@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
-from sqlalchemy import Boolean, Integer, String, Time, Uuid, true
+from sqlalchemy import Boolean, Integer, String, Time, UniqueConstraint, Uuid, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
@@ -13,8 +13,13 @@ if TYPE_CHECKING:
     from .window import Window
 
 
+def _new_department_code() -> str:
+    return uuid4().hex[:8].upper()
+
+
 class Department(Base):
     __tablename__ = "department"
+    __table_args__ = (UniqueConstraint("code", name="uq_department_code"),)
 
     id: Mapped[UUID] = mapped_column(
         Uuid(as_uuid=True),
@@ -22,9 +27,10 @@ class Department(Base):
         default=uuid4,
     )
 
-    name: Mapped[str] = mapped_column(
-        String,
+    code: Mapped[str] = mapped_column(
+        String(16),
         nullable=False,
+        default=_new_department_code,
     )
 
     address: Mapped[str] = mapped_column(
