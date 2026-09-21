@@ -207,6 +207,36 @@ async def start(
 
 
 @router.post(
+    "/{window_id}:noshow",
+    response_model=TicketResponse,
+    responses={
+        404: {"description": "Window not found in this department"},
+        409: {"description": "No called ticket at this window to mark as no-show"},
+    },
+)
+async def mark_no_show(
+    department_id: UUID,
+    window_id: UUID,
+    svc: WindowsService = Depends(),
+    _staff: Staff = Depends(require_operator),
+) -> TicketResponse:
+    try:
+        return TicketResponse.model_validate(await svc.mark_no_show(department_id, window_id))
+
+    except WindowNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Window not found in this department",
+        ) from exc
+
+    except NoCalledTicketError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="No called ticket at this window to mark as no-show",
+        ) from exc
+
+
+@router.post(
     "/{window_id}:complete",
     response_model=TicketResponse,
     responses={

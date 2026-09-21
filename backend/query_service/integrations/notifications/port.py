@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class NotificationEvent(StrEnum):
     TICKET_CALLED = "ticket.called"
     QUEUE_APPROACHING = "queue.approaching"
+    TICKET_NOSHOW = "ticket.noshow"
 
 
 class NotificationMessage(BaseModel):

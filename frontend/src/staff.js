@@ -175,6 +175,14 @@ document.addEventListener("click", (e) => {
   }
   if (a === "repeat")
     notify(`Повторный вызов ${current.id} · демонстрационное уведомление`);
+  if (a === "absent" && current && !current.started) {
+    log(`Талон ${current.id} закрыт: клиент не подошёл`);
+    current = null;
+    if (closing) {
+      opened = false;
+      closing = false;
+    }
+  }
   if (a === "finish" && current) {
     log(`Обслуживание ${current.id} завершено`);
     current = null;
@@ -219,7 +227,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (
-    ["add", "redirect", "return", "absent", "close-return", "problem"].includes(
+    ["add", "redirect", "return", "close-return", "problem"].includes(
       a,
     )
   ) {
@@ -228,7 +236,6 @@ document.addEventListener("click", (e) => {
       add: "Клиент из живой очереди",
       redirect: "Перенаправить клиента",
       return: "Вернуть в очередь",
-      absent: "Клиент не подошёл",
       "close-return": "Возврат и закрытие",
       problem: "Сообщить о проблеме",
     };
