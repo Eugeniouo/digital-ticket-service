@@ -1,20 +1,31 @@
 import './manager-guard.js';
-import { departments } from './mock-data.js';
 import { departmentCaption } from './shared/department.js';
 import { escapeHtml } from './shared/html.js';
 import { listOperators, createOperator, changePassword, currentOperator } from './operator-accounts.js';
+import { departmentApi } from './staff/api.js';
 
 const form = document.querySelector('#create-account');
 const message = document.querySelector('#account-message');
 const modal = document.querySelector('#modal');
 const manager = currentOperator();
-const managerDepartment = departments.find(department => department.id === manager.department_id);
-document.querySelector('#account-department').textContent = managerDepartment
-  ? departmentCaption(managerDepartment)
-  : 'Отделение не найдено';
+let managerDepartment = null;
+const departmentTitle = document.querySelector('#account-department');
+departmentTitle.textContent = 'Загружаем отделение…';
 
 function departmentById(id) {
-  return departments.find(department => department.id === id);
+  return managerDepartment?.id === id ? managerDepartment : null;
+}
+
+if (manager?.department_id) {
+  departmentApi.get(manager.department_id).then((department) => {
+    managerDepartment = department;
+    departmentTitle.textContent = departmentCaption(department);
+    render();
+  }).catch(() => {
+    departmentTitle.textContent = 'Отделение не найдено';
+  });
+} else {
+  departmentTitle.textContent = 'Отделение не найдено';
 }
 
 function render() {

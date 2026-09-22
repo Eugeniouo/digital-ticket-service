@@ -1,6 +1,6 @@
 import { renderHtml } from './shared/render.js';
 import { openReportCalendar } from './report-calendar.js';
-import { dateOffset } from './staff-analytics.js';
+import { dateOffset, dateValueFromOffset, formatRuDate, todayDateValue, toDailyReportView } from './staff-analytics.js';
 import './shared/assets.js';
 import {
   escapeHtml as esc,
@@ -8,14 +8,17 @@ import {
 } from "./shared/html.js";
 import { createStaffViews } from "./staff-views.js";
 import { currentOperator } from './operator-accounts.js';
-import { departments, servicesForDepartment } from './mock-data.js';
+import { servicesForDepartment } from './mock-data.js';
 import { formatTicketLabel, ticketLabelPrefix } from './shared/ticket-label.js';
 import { ticketApi } from './tickets/api.js';
 import { demoHistoryEvents, historyTimelineHtml } from './staff-ticket-history.js';
 import { isUuid } from './shared/ids.js';
+import { departmentIdFromSession } from './shared/staff-session.js';
+import { departmentApi } from './staff/api.js';
+import { queueRulesToMinutes, queueRulesToSeconds, readQueueRulesForm } from './staff/queue-rules.js';
 const signedOperator = currentOperator();
-const operatorDepartment = departments.find(department => department.id === signedOperator?.department_id);
-const services = servicesForDepartment(operatorDepartment?.id);
+let operatorDepartment = null;
+const services = servicesForDepartment(signedOperator?.department_id);
 // Demo controller: session state, user actions and dialogs.
 let analyticsOffset = 0;
 
@@ -61,11 +64,22 @@ function notify(text) {
     document.querySelector("#toast").textContent = "";
   }, 3200);
 }
-let rules = [10, 10, 20, 2];
+let queueRules = null;
+let queueRulesStatus = "idle";
+let queueRulesRequest = 0;
+let analyticsReport = null;
+let analyticsStatus = "idle";
+let analyticsRequest = 0;
+let analyticsAbort = null;
 const { queueList, table, operator, windows, overview, analytics, rulesView } =
   createStaffViews(() => ({
     operatorName: signedOperator?.display_name || "Анна Иванова",
     analyticsOffset,
+    analyticsDateValue: dateValueFromOffset(analyticsOffset),
+    analyticsToday: todayDateValue(),
+    analyticsLabel: formatRuDate(dateValueFromOffset(analyticsOffset)),
+    analyticsReport,
+    analyticsStatus,
     queue,
     current,
     opened,
@@ -73,7 +87,8 @@ const { queueList, table, operator, windows, overview, analytics, rulesView } =
     enabled,
     served,
     problems,
-    rules,
+    rules: queueRules,
+    rulesStatus: queueRulesStatus,
     services,
   }));
 
@@ -171,17 +186,20 @@ document.addEventListener("click", (e) => {
   if (!a) return;
   if (a === 'open-report-calendar') {
     const input = document.querySelector('#analytics-date');
+    if (!input) return;
     openReportCalendar(input.value, value => {
       const offset = dateOffset(value);
       if (offset === null) return;
       analyticsOffset = offset;
-      render();
+      void loadAnalytics();
     });
     return;
   }
-  if (a === "analytics-previous" || a === "analytics-next" || a === "analytics-today") {
-    analyticsOffset = a === "analytics-today" ? 0 : Math.min(0, analyticsOffset + (a === "analytics-previous" ? -1 : 1));
-    render();
+  if (a === "analytics-previous" || a === "analytics-next" || a === "analytics-today" || a === "analytics-reload") {
+    if (a !== "analytics-reload") {
+      analyticsOffset = a === "analytics-today" ? 0 : Math.min(0, analyticsOffset + (a === "analytics-previous" ? -1 : 1));
+    }
+    void loadAnalytics();
     return;
   }
   if (a === "dismiss") {
@@ -194,6 +212,12 @@ document.addEventListener("click", (e) => {
     if (role !== "admin" && !["nav-Рабочее место", "nav-История смены"].includes(a)) return;
     page = a.slice(4);
     render();
+    if (page === "Правила очереди") void loadQueueRules();
+    if (page === "Аналитика") void loadAnalytics();
+    return;
+  }
+  if (a === "reload-rules") {
+    void loadQueueRules();
     return;
   }
 
@@ -364,15 +388,8 @@ document.addEventListener("click", (e) => {
     modal.innerHTML = "";
   }
   if (a === "save-rules") {
-    const values = [0, 1, 2, 3].map((i) =>
-      Number(document.querySelector("#rule-" + i).value),
-    );
-    if (values.some((n) => !Number.isInteger(n) || n < 1 || n > 120)) {
-      notify("Укажите целые значения от 1 до 120");
-      return;
-    }
-    rules = values;
-    notify("Демонстрационные настройки сохранены");
+    void saveQueueRules();
+    return;
   }
   if (a === "notification") {
     problems.unshift(
@@ -382,7 +399,101 @@ document.addEventListener("click", (e) => {
   }
   render();
 });
+
+async function loadOperatorDepartment() {
+  const departmentId = departmentIdFromSession();
+  if (!departmentId) {
+    render();
+    return;
+  }
+  try {
+    operatorDepartment = await departmentApi.get(departmentId);
+  } catch {
+    operatorDepartment = null;
+  }
+  render();
+}
+
+async function loadQueueRules() {
+  if (queueRulesStatus === "saving") return;
+  const departmentId = departmentIdFromSession();
+  const requestId = ++queueRulesRequest;
+  if (!departmentId) {
+    queueRules = null;
+    queueRulesStatus = "error";
+    render();
+    return;
+  }
+  queueRulesStatus = "loading";
+  render();
+  try {
+    const dto = await departmentApi.getQueueRules(departmentId);
+    if (requestId !== queueRulesRequest) return;
+    queueRules = queueRulesToMinutes(dto);
+    queueRulesStatus = "ready";
+  } catch {
+    if (requestId !== queueRulesRequest) return;
+    queueRules = null;
+    queueRulesStatus = "error";
+  }
+  render();
+}
+
+async function saveQueueRules() {
+  if (queueRulesStatus === "saving" || queueRulesStatus === "loading") return;
+  const minutes = readQueueRulesForm();
+  if (!minutes) {
+    notify("Укажите целые значения от 0 до 1440 минут");
+    return;
+  }
+  const departmentId = departmentIdFromSession();
+  if (!departmentId) {
+    notify("Отделение не указано в сессии");
+    return;
+  }
+  queueRules = minutes;
+  queueRulesStatus = "saving";
+  render();
+  try {
+    const dto = await departmentApi.patchQueueRules(departmentId, queueRulesToSeconds(minutes));
+    queueRules = queueRulesToMinutes(dto);
+    queueRulesStatus = "ready";
+    notify("Правила очереди сохранены");
+  } catch (error) {
+    queueRulesStatus = "ready";
+    notify(error?.status === 403 ? "Недостаточно прав для изменения правил" : "Не удалось сохранить правила");
+  }
+  render();
+}
+
+async function loadAnalytics() {
+  const departmentId = departmentIdFromSession();
+  const requestId = ++analyticsRequest;
+  analyticsAbort?.abort();
+  analyticsAbort = new AbortController();
+  analyticsStatus = "loading";
+  analyticsReport = null;
+  render();
+  if (!departmentId) {
+    analyticsStatus = "error";
+    render();
+    return;
+  }
+  try {
+    const dto = await departmentApi.getAnalytics(departmentId, dateValueFromOffset(analyticsOffset), analyticsAbort.signal);
+    if (requestId !== analyticsRequest) return;
+    analyticsReport = toDailyReportView(dto);
+    analyticsStatus = "ready";
+  } catch {
+    if (requestId !== analyticsRequest) return;
+    analyticsReport = null;
+    analyticsStatus = "error";
+  }
+  render();
+}
+
 render();
+void loadOperatorDepartment();
 
 root.addEventListener('change', event => {
   if (event.target.id !== 'analytics-date') return;
@@ -393,5 +504,5 @@ root.addEventListener('change', event => {
     return;
   }
   analyticsOffset = offset;
-  render();
+  void loadAnalytics();
 });

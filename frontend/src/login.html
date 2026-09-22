@@ -17,10 +17,6 @@
         <form id="login-form">
           <label for="department">Отделение</label>
           <select id="department" name="department_id" required></select>
-          <div id="setup-fields" hidden>
-            <label for="setup-name">Имя руководителя</label>
-            <input id="setup-name" name="display_name" maxlength="100">
-          </div>
           <label for="login">Логин</label>
           <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required minlength="3" maxlength="40" autocapitalize="none" spellcheck="false">
           <label for="password">Пароль</label>
@@ -28,7 +24,7 @@
           <p id="login-error" class="error" role="alert"></p>
           <button class="login-submit" type="submit">Войти</button>
         </form>
-        <p class="demo-note">Локальный прототип: используйте тестовые данные. Аккаунт определяет рабочее место сотрудника. Для эксплуатации нужна серверная авторизация.</p>
+        <p class="demo-note">Войдите с учётной записью отделения. Руководитель настраивает правила очереди и смотрит аналитику своего отделения.</p>
         <a class="visitor-link" href="/">Перейти к записи посетителя →</a>
       </section>
     </main>

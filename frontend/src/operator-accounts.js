@@ -1,4 +1,5 @@
-import { departments } from './mock-data.js';
+import { isUuid } from './shared/ids.js';
+import { getStaff } from './shared/staff-session.js';
 
 const KEY = 'pochta-demo-operators-v3';
 export function listOperators() {
@@ -13,7 +14,11 @@ async function digest(password, salt) {
   return Array.from(new Uint8Array(bits)).map(value => value.toString(16).padStart(2, '0')).join('');
 }
 function validateDepartment(department_id) {
-  if (!departments.some(item => item.id === department_id)) throw new Error('Выберите отделение из списка.');
+  if (!isUuid(department_id)) throw new Error('Выберите отделение из списка.');
+  const sessionDepartmentId = getStaff()?.department_id;
+  if (sessionDepartmentId && sessionDepartmentId !== department_id) {
+    throw new Error('Выберите отделение из списка.');
+  }
 }
 async function passwordFields(password) {
   password = password.trim();
@@ -55,6 +60,14 @@ export async function authenticate(username, password, department_id) {
   return account.id;
 }
 export function currentOperator() {
-  const id = sessionStorage.getItem('pochta-demo-operator-id');
-  return listOperators().find(item => item.id === id) || null;
+  const staff = getStaff();
+  if (!staff) return null;
+  return {
+    id: staff.id,
+    username: staff.username,
+    display_name: staff.display_name,
+    department_id: staff.department_id,
+    role: staff.role,
+    is_active: staff.is_active,
+  };
 }
