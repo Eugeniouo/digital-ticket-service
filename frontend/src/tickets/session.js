@@ -3,6 +3,16 @@ import { referenceFromTicket } from './storage.js'
 export const TERMINAL_STATUSES = new Set(['completed', 'canceled'])
 export const TICKET_STATUSES = new Set(['queued', 'called', 'serving', ...TERMINAL_STATUSES])
 
+/** Persist the visitor session only while the ticket is still live. */
+export function syncStoredTicket(storage, ticket) {
+  if (!ticket || TERMINAL_STATUSES.has(ticket.status)) {
+    storage.clear()
+    return true
+  }
+
+  return storage.save(referenceFromTicket(ticket))
+}
+
 function errorMessage(error, cancel, retry) {
   if (error.status === 404) return 'Талон не найден. Обратитесь к сотруднику.'
   if (error.status === 409) return 'Статус изменился: отмена недоступна. Обновляем талон.'

@@ -45,13 +45,16 @@ class ServicesService:
 
     async def create_service(self, department_id: UUID, payload: ServiceCreateRequestDTO) -> ServiceDTO:
         await self._require_department(department_id)
+
         service = Service(
             department_id=department_id,
             name=payload.name,
+            kind=payload.kind,
             duration_time=payload.duration_time,
             is_active=payload.is_active,
         )
         await self.repository.add(service)
+
         return service_to_dto(service)
 
     async def update_service(
@@ -66,6 +69,8 @@ class ServicesService:
 
         if payload.name is not None:
             service.name = payload.name
+        if payload.kind is not None:
+            service.kind = payload.kind
         if payload.duration_time is not None:
             service.duration_time = payload.duration_time
         if payload.is_active is not None:

@@ -4,6 +4,7 @@ import { escapeHtml } from './shared/html.js'
 import { departmentIdFromSearch } from './shared/ids.js'
 import { request, departmentPath, ticketApi } from './tickets/api.js'
 import { createTicketStorage, referenceFromTicket } from './tickets/storage.js'
+import { syncStoredTicket, TERMINAL_STATUSES } from './tickets/session.js'
 import { INITIAL_DATE, INITIAL_MONTH, formatDate, formatMonth, getMonthDays, getMonthOffset, shiftMonth } from './calendar.js'
 
 const root = document.querySelector('#root')
@@ -64,7 +65,7 @@ async function issueTicket() {
   try {
     ticket = await ticketApi.create(state.departmentId, payload)
     const ref = referenceFromTicket(ticket)
-    ticketStorage.save(ref)
+    syncStoredTicket(ticketStorage, ticket)
     uncertainIssue = true // Keep the issuing form disabled until navigation completes.
     // URL is a recovery fallback when localStorage is unavailable.
     location.assign(`/?view=ticket&${new URLSearchParams(ref)}`)
@@ -86,14 +87,24 @@ function serviceScreen() {
   </main>`
 }
 
+const SERVICE_ICON = {
+  parcel_receive: 'receive-selected',
+  parcel_send: 'send-selected',
+  letters: 'letter-selected',
+  payments: 'payments-selected',
+  pension: 'receipt-selected',
+  other: 'services-selected',
+}
+
 function serviceCard(service) {
   const selected = state.serviceId === service.id
   const className = `service-card${selected ? ' service-card--selected' : ''}`
+  const icon = SERVICE_ICON[service.kind] || SERVICE_ICON.other
 
   return `
     <button class="${className}" data-service="${escapeHtml(service.id)}" aria-pressed="${selected}">
       <span>${escapeHtml(service.name)}</span>
-      <span class="service-icon" aria-hidden="true" style="--service-icon: url('/assets/services-selected.svg')"></span>
+      <span class="service-icon" aria-hidden="true" style="--service-icon: url('/assets/${icon}.svg')"></span>
     </button>
   `
 }
@@ -163,7 +174,9 @@ function dateScreen() {
           <button data-month="1" aria-label="Следующий месяц">›</button>
         </header>
         ${calendarDates()}
-        <div class="time-groups">${getTimeGroups(state.date).map(timeGroup).join('')}</div>
+        <div class="time-groups">${!busy && !slots.length
+          ? '<p class="empty-results" role="status">Слотов еще нет</p>'
+          : getTimeGroups(state.date).map(timeGroup).join('')}</div>
       </div>
     </section>
     ${button('Записаться', 'date-next', !state.date || !state.time)}
@@ -307,6 +320,32 @@ async function updateAsync(action) {
   }
 }
 
+async function restoreVisitorSession() {
+  const ref = ticketStorage.read()
+  if (!ref) {
+    uncertainIssue = false
+    return false
+  }
+
+  try {
+    const ticket = await ticketApi.get(ref)
+    syncStoredTicket(ticketStorage, ticket)
+    if (TERMINAL_STATUSES.has(ticket.status)) {
+      uncertainIssue = false
+      return false
+    }
+  } catch (error) {
+    if (error.status === 404) {
+      ticketStorage.clear()
+      uncertainIssue = false
+      return false
+    }
+  }
+
+  location.replace(`/?view=ticket&${new URLSearchParams(ref)}`)
+  return true
+}
+
 async function initialize() {
   departments = (await request('/departments')).filter(department => department.is_active)
   if (!state.booking || state.step === 'service') {
@@ -314,4 +353,11 @@ async function initialize() {
     await loadServices()
   }
 }
-await updateAsync(initialize)
+
+window.addEventListener('pageshow', async event => {
+  if (!event.persisted && !uncertainIssue) return
+  if (await restoreVisitorSession()) return
+  render()
+})
+
+if (!(await restoreVisitorSession())) await updateAsync(initialize)

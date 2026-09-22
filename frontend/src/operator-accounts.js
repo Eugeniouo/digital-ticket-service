@@ -29,13 +29,16 @@ export async function createOperator({ username, display_name, department_id, pa
   validateDepartment(department_id);
   const fields = await passwordFields(password);
   const accounts = listOperators();
-  if (accounts.some(account => account.username === username)) throw new Error('Этот логин уже занят.');
+  if (accounts.some(account => account.username === username && account.department_id === department_id)) throw new Error('Этот логин уже занят.');
   accounts.push({ id: crypto.randomUUID(), username, display_name, department_id, role, is_active: true, ...fields });
   save(accounts);
 }
 
 export async function initializeManager(details) {
-  if (listOperators().some(account => account.role === 'admin')) throw new Error('Руководитель уже настроен. Войдите с его логином.');
+  if (listOperators().some(account => account.role === 'admin' && account.department_id === details.department_id)) {
+    throw new Error('Руководитель уже настроен. Войдите с его логином.');
+  }
+
   await createOperator(details, 'admin');
 }
 export async function changePassword(id, password) {
@@ -46,8 +49,8 @@ export async function changePassword(id, password) {
   Object.assign(account, fields);
   save(accounts);
 }
-export async function authenticate(username, password) {
-  const account = listOperators().find(item => item.username === username.trim().toLowerCase());
+export async function authenticate(username, password, department_id) {
+  const account = listOperators().find(item => item.username === username.trim().toLowerCase() && item.department_id === department_id);
   if (!account || account.is_active === false || await digest(password.trim(), account.salt) !== account.passwordHash) throw new Error('Неверный логин или пароль.');
   return account.id;
 }

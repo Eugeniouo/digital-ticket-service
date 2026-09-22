@@ -20,8 +20,10 @@ class StaffRepository:
     async def get_by_id(self, staff_id: UUID) -> Staff | None:
         return await self.session.get(Staff, staff_id)
 
-    async def get_by_username(self, username: str) -> Staff | None:
-        return await self.session.scalar(select(Staff).where(Staff.username == username))
+    async def get_by_username(self, username: str, department_id: UUID | None) -> Staff | None:
+        department_filter = Staff.department_id.is_(None) if department_id is None else Staff.department_id == department_id
+
+        return await self.session.scalar(select(Staff).where(Staff.username == username, department_filter))
 
     async def department_exists(self, department_id: UUID) -> bool:
         department_pk = await self.session.scalar(select(Department.id).where(Department.id == department_id))

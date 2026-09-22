@@ -35,7 +35,7 @@ class TicketCounter(Base):
     )
 
     prefix: Mapped[str] = mapped_column(
-        String(5),
+        String(32),
         nullable=False,
     )
 

@@ -1,11 +1,15 @@
-/** Display prefix of a ticket label, matching query_service TicketService._get_category_prefix. */
-export function ticketLabelPrefix(serviceName) {
-  const name = String(serviceName).toLowerCase()
-  if (name.includes('посылк')) return 'П'
-  if (name.includes('пенси') || name.includes('пособи')) return 'С'
-  if (name.includes('платеж') || name.includes('перевод')) return 'К'
-  if (name.includes('письм')) return 'М'
-  return 'У'
+/** Ticket series prefix lives on ServiceKind (query_service ServiceKind.prefix). */
+const PREFIX_BY_KIND = {
+  parcel_receive: 'П',
+  parcel_send: 'П',
+  letters: 'М',
+  payments: 'К',
+  pension: 'С',
+  other: 'У',
+}
+
+export function ticketLabelPrefix(kind) {
+  return PREFIX_BY_KIND[kind] || PREFIX_BY_KIND.other
 }
 
 export function formatTicketLabel(prefix, serial) {

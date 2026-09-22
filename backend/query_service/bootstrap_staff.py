@@ -24,7 +24,9 @@ async def bootstrap_root() -> None:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     try:
         async with session_factory() as session:
-            existing = await session.scalar(select(Staff).where(Staff.username == username))
+            existing = await session.scalar(
+                select(Staff).where(Staff.username == username, Staff.department_id.is_(None)),
+            )
             if existing is not None:
                 return
 

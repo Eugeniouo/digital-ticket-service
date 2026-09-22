@@ -3,7 +3,7 @@
 from query_service.database.models.department import Department
 from query_service.database.models.issue import Issue
 from query_service.database.models.notification_outbox import NotificationOutbox
-from query_service.database.models.service import Service
+from query_service.database.models.service import Service, ServiceKind
 from query_service.database.models.slot import Slot
 from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import Ticket
@@ -16,6 +16,7 @@ __all__ = [
     "Issue",
     "NotificationOutbox",
     "Service",
+    "ServiceKind",
     "Slot",
     "Staff",
     "StaffRole",

@@ -7,7 +7,7 @@ class InactiveStaffError(Exception):
 
 
 class DuplicateUsernameError(Exception):
-    """Username is already taken."""
+    """Username is already taken in this department."""
 
 
 class InvalidStaffDepartmentError(Exception):

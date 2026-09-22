@@ -32,7 +32,7 @@ async def sign_in(
     svc: AuthService = Depends(),
 ) -> TokenResponse:
     try:
-        return await svc.sign_in(payload.username, payload.password)
+        return await svc.sign_in(payload.username, payload.password, payload.department_id)
     except InvalidCredentialsError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -88,7 +88,7 @@ async def create_staff(
     except DuplicateUsernameError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Username already exists",
+            detail="Username already exists in this department",
         ) from exc
 
 
