@@ -328,7 +328,7 @@ document.addEventListener("click", (e) => {
         return;
       }
       const ticket = demoTicket({
-        label: formatTicketLabel(ticketLabelPrefix(service.name), serial++),
+        label: formatTicketLabel(ticketLabelPrefix(service.kind), serial++),
         service,
         source: "walk-in",
         wait: 0,

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
 from sqlalchemy import (
     Boolean,
+    Enum,
     ForeignKey,
     Integer,
     String,
@@ -17,6 +19,22 @@ if TYPE_CHECKING:
     from .department import Department
     from .slot import Slot
     from .window import Window
+
+
+class ServiceKind(StrEnum):
+    PARCEL_RECEIVE = "parcel_receive"
+    PARCEL_SEND = "parcel_send"
+    LETTERS = "letters"
+    PAYMENTS = "payments"
+    PENSION = "pension"
+    OTHER = "other"
+
+
+_SERVICE_KIND = Enum(
+    ServiceKind,
+    name="service_kind",
+    values_callable=lambda members: [item.value for item in members],
+)
 
 
 class Service(Base):
@@ -36,6 +54,13 @@ class Service(Base):
     name: Mapped[str] = mapped_column(
         String,
         nullable=False,
+    )
+
+    kind: Mapped[ServiceKind] = mapped_column(
+        _SERVICE_KIND,
+        nullable=False,
+        default=ServiceKind.OTHER,
+        server_default="other",
     )
 
     duration_time: Mapped[int] = mapped_column(

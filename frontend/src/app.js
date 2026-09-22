@@ -86,14 +86,24 @@ function serviceScreen() {
   </main>`
 }
 
+const SERVICE_ICON = {
+  parcel_receive: 'receive-selected',
+  parcel_send: 'send-selected',
+  letters: 'letter-selected',
+  payments: 'payments-selected',
+  pension: 'receipt-selected',
+  other: 'services-selected',
+}
+
 function serviceCard(service) {
   const selected = state.serviceId === service.id
   const className = `service-card${selected ? ' service-card--selected' : ''}`
+  const icon = SERVICE_ICON[service.kind] || SERVICE_ICON.other
 
   return `
     <button class="${className}" data-service="${escapeHtml(service.id)}" aria-pressed="${selected}">
       <span>${escapeHtml(service.name)}</span>
-      <span class="service-icon" aria-hidden="true" style="--service-icon: url('/assets/services-selected.svg')"></span>
+      <span class="service-icon" aria-hidden="true" style="--service-icon: url('/assets/${icon}.svg')"></span>
     </button>
   `
 }

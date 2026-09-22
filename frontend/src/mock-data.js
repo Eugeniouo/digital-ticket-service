@@ -21,12 +21,12 @@ export const departments = [
 ]
 
 const SERVICE_SPECS = [
-  { name: 'Получение посылки', duration_time: 10 },
-  { name: 'Отправка посылки', duration_time: 10 },
-  { name: 'Заказные письма', duration_time: 10 },
-  { name: 'Платежи и переводы', duration_time: 10 },
-  { name: 'Пенсия и пособия', duration_time: 15 },
-  { name: 'Прочие услуги', duration_time: 10 },
+  { name: 'Получение посылки', duration_time: 10, kind: 'parcel_receive' },
+  { name: 'Отправка посылки', duration_time: 10, kind: 'parcel_send' },
+  { name: 'Заказные письма', duration_time: 10, kind: 'letters' },
+  { name: 'Платежи и переводы', duration_time: 10, kind: 'payments' },
+  { name: 'Пенсия и пособия', duration_time: 15, kind: 'pension' },
+  { name: 'Прочие услуги', duration_time: 10, kind: 'other' },
 ]
 
 export const services = departments.flatMap((department, departmentIndex) =>
@@ -34,6 +34,7 @@ export const services = departments.flatMap((department, departmentIndex) =>
     id: `a369000${departmentIndex}-0001-4000-8000-${String(serviceIndex + 1).padStart(12, '0')}`,
     department_id: department.id,
     name: spec.name,
+    kind: spec.kind,
     duration_time: spec.duration_time,
     is_active: true,
   })),

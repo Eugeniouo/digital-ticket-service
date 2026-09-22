@@ -37,12 +37,13 @@ class JsonHttp(Protocol):
 class DemoService:
     name: str
     duration_time: int
+    kind: str
 
 
 @dataclass(frozen=True)
 class DemoWindow:
     label: str
-    service_names: tuple[str, ...]
+    service_kinds: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,15 @@ DEMO_OP_1 = "op1"
 DEMO_ADMIN_2 = "admin2"
 DEMO_OP_2 = "op2"
 
+DEMO_SERVICES: tuple[DemoService, ...] = (
+    DemoService(name="Получение посылки", duration_time=10, kind="parcel_receive"),
+    DemoService(name="Отправка посылки", duration_time=10, kind="parcel_send"),
+    DemoService(name="Заказные письма", duration_time=10, kind="letters"),
+    DemoService(name="Платежи и переводы", duration_time=10, kind="payments"),
+    DemoService(name="Пенсия и пособия", duration_time=15, kind="pension"),
+    DemoService(name="Прочие услуги", duration_time=10, kind="other"),
+)
+
 DEMO_CATALOG: tuple[DemoDepartment, ...] = (
     DemoDepartment(
         code="DEMO01",
@@ -72,13 +82,10 @@ DEMO_CATALOG: tuple[DemoDepartment, ...] = (
         close_time="18:00:00",
         admin_username=DEMO_ADMIN_1,
         operator_username=DEMO_OP_1,
-        services=(
-            DemoService(name="Консультация", duration_time=10),
-            DemoService(name="Оформление", duration_time=15),
-        ),
+        services=DEMO_SERVICES,
         windows=(
-            DemoWindow(label="Окно 1", service_names=("Консультация", "Оформление")),
-            DemoWindow(label="Окно 2", service_names=("Консультация",)),
+            DemoWindow(label="Окно 1", service_kinds=tuple(item.kind for item in DEMO_SERVICES)),
+            DemoWindow(label="Окно 2", service_kinds=("parcel_receive", "other")),
         ),
     ),
     DemoDepartment(
@@ -88,13 +95,10 @@ DEMO_CATALOG: tuple[DemoDepartment, ...] = (
         close_time="18:00:00",
         admin_username=DEMO_ADMIN_2,
         operator_username=DEMO_OP_2,
-        services=(
-            DemoService(name="Консультация", duration_time=10),
-            DemoService(name="Оформление", duration_time=15),
-        ),
+        services=DEMO_SERVICES,
         windows=(
-            DemoWindow(label="Окно 1", service_names=("Консультация", "Оформление")),
-            DemoWindow(label="Окно 2", service_names=("Консультация",)),
+            DemoWindow(label="Окно 1", service_kinds=tuple(item.kind for item in DEMO_SERVICES)),
+            DemoWindow(label="Окно 2", service_kinds=("parcel_receive", "other")),
         ),
     ),
 )
@@ -265,29 +269,68 @@ async def _list_services(http: JsonHttp, token: str, department_id: str) -> list
     return [_as_object(item) for item in _as_list(data)]
 
 
+def _find_catalog_service(items: list[dict[str, Any]], spec: DemoService) -> dict[str, Any] | None:
+    for item in items:
+        if spec.kind != "other" and item.get("kind") == spec.kind:
+            return item
+        if spec.kind == "other" and item.get("name") == spec.name:
+            return item
+    return None
+
+
 async def _ensure_service(
     http: JsonHttp,
     token: str,
     department_id: str,
     spec: DemoService,
 ) -> dict[str, Any]:
-    for item in await _list_services(http, token, department_id):
-        if item.get("name") == spec.name:
-            return item
+    matched = _find_catalog_service(await _list_services(http, token, department_id), spec)
+    body = {
+        "name": spec.name,
+        "kind": spec.kind,
+        "duration_time": spec.duration_time,
+        "is_active": True,
+    }
+
+    if matched is not None:
+        service_id = matched.get("id")
+        if not isinstance(service_id, str):
+            msg = f"service {spec.name} has no id"
+            raise RuntimeError(msg)
+
+        if (
+            matched.get("name") == spec.name
+            and matched.get("kind") == spec.kind
+            and matched.get("duration_time") == spec.duration_time
+            and matched.get("is_active") is True
+        ):
+            return matched
+
+        path = f"/api/departments/{department_id}/services/{service_id}"
+        status, data = await http.request("PATCH", path, json_body=body, token=token)
+        _require_status(status, data, {200}, f"PATCH {path}")
+        return _as_object(data)
 
     path = f"/api/departments/{department_id}/services"
-    status, data = await http.request(
-        "POST",
-        path,
-        json_body={
-            "name": spec.name,
-            "duration_time": spec.duration_time,
-            "is_active": True,
-        },
-        token=token,
-    )
+    status, data = await http.request("POST", path, json_body=body, token=token)
     _require_status(status, data, {201}, f"POST {path}")
     return _as_object(data)
+
+
+async def _deactivate_extra_services(
+    http: JsonHttp,
+    token: str,
+    department_id: str,
+    keep_ids: set[str],
+) -> None:
+    for item in await _list_services(http, token, department_id):
+        service_id = item.get("id")
+        if not isinstance(service_id, str) or service_id in keep_ids or item.get("is_active") is False:
+            continue
+
+        path = f"/api/departments/{department_id}/services/{service_id}"
+        status, data = await http.request("PATCH", path, json_body={"is_active": False}, token=token)
+        _require_status(status, data, {200}, f"PATCH {path}")
 
 
 async def _list_windows(http: JsonHttp, token: str, department_id: str) -> list[dict[str, Any]]:
@@ -302,25 +345,38 @@ async def _ensure_window(
     token: str,
     department_id: str,
     spec: DemoWindow,
-    service_ids_by_name: dict[str, str],
+    service_ids_by_kind: dict[str, str],
 ) -> None:
-    for item in await _list_windows(http, token, department_id):
-        if item.get("label") == spec.label:
-            return
-
-    missing = [name for name in spec.service_names if name not in service_ids_by_name]
+    missing = [kind for kind in spec.service_kinds if kind not in service_ids_by_kind]
     if missing:
         msg = f"window {spec.label} refers to unknown services: {missing}"
         raise RuntimeError(msg)
+
+    wanted = [service_ids_by_kind[kind] for kind in spec.service_kinds]
+
+    for item in await _list_windows(http, token, department_id):
+        if item.get("label") != spec.label:
+            continue
+
+        window_id = item.get("id")
+        if not isinstance(window_id, str):
+            msg = f"window {spec.label} has no id"
+            raise RuntimeError(msg)
+
+        current = item.get("service_ids") or []
+        if {str(service_id) for service_id in current} == set(wanted):
+            return
+
+        path = f"/api/departments/{department_id}/windows/{window_id}"
+        status, data = await http.request("PATCH", path, json_body={"service_ids": wanted}, token=token)
+        _require_status(status, data, {200}, f"PATCH {path}")
+        return
 
     path = f"/api/departments/{department_id}/windows"
     status, data = await http.request(
         "POST",
         path,
-        json_body={
-            "label": spec.label,
-            "service_ids": [service_ids_by_name[name] for name in spec.service_names],
-        },
+        json_body={"label": spec.label, "service_ids": wanted},
         token=token,
     )
     if status == 409:
@@ -384,7 +440,7 @@ async def _seed_department(
         department_id=department_id,
     )
 
-    service_ids_by_name: dict[str, str] = {}
+    service_ids_by_kind: dict[str, str] = {}
     durations_by_id: dict[str, int] = {}
     for service_spec in spec.services:
         service = await _ensure_service(http, token, department_id, service_spec)
@@ -392,12 +448,14 @@ async def _seed_department(
         if not isinstance(service_id, str):
             msg = f"service {service_spec.name} has no id"
             raise RuntimeError(msg)
-        service_ids_by_name[service_spec.name] = service_id
+        service_ids_by_kind[service_spec.kind] = service_id
         duration = service.get("duration_time", service_spec.duration_time)
         durations_by_id[service_id] = duration if isinstance(duration, int) else service_spec.duration_time
 
+    await _deactivate_extra_services(http, token, department_id, set(service_ids_by_kind.values()))
+
     for window_spec in spec.windows:
-        await _ensure_window(http, token, department_id, window_spec, service_ids_by_name)
+        await _ensure_window(http, token, department_id, window_spec, service_ids_by_kind)
 
     for service_id, duration in durations_by_id.items():
         for slot_date in slot_dates:

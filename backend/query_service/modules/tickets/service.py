@@ -69,21 +69,6 @@ class TicketService:
         )
         await self.history_repo.create(history)
 
-    def _get_category_prefix(self, service_name: str) -> str:
-        """Determines the ticket prefix based on the service name."""
-        name = service_name.lower()
-
-        if "посылк" in name:
-            return "П"
-        if "пенси" in name or "пособи" in name:
-            return "С"
-        if "платеж" in name or "перевод" in name:
-            return "К"
-        if "письм" in name:
-            return "М"
-
-        return "У"
-
     async def issue_ticket(
         self,
         department_id: UUID,
@@ -121,7 +106,7 @@ class TicketService:
 
         priority_key = compute_priority_key(effective_start)
 
-        prefix = self._get_category_prefix(service.name)
+        prefix = service.kind.value
         next_number = await self.repository.get_next_ticket_number(department_id, prefix)
         ticket_label = f"{prefix}-{next_number:03d}"
 
