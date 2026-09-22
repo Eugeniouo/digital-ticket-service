@@ -1,20 +1,13 @@
-/** UI-only demo session. This is not authentication or authorization. */
-const SESSION_KEY = 'pochta-demo-sign-in';
+import { clearStaffSession, hasStaffSession } from "./shared/staff-session.js";
 
 export function isSignedIn() {
-  return sessionStorage.getItem(SESSION_KEY) === 'true';
-}
-
-export function signIn() {
-  // Never retain the entered password or login.
-  sessionStorage.setItem(SESSION_KEY, 'true');
+  return hasStaffSession();
 }
 
 export function signOut() {
-  sessionStorage.removeItem(SESSION_KEY);
-  sessionStorage.removeItem('pochta-demo-operator-id');
+  clearStaffSession();
 }
 
 export function staffDestination(role) {
-  return `/src/staff.html?role=${role === 'admin' ? 'admin' : 'operator'}`;
+  return `/src/staff.html?role=${role === "admin" ? "admin" : "operator"}`;
 }

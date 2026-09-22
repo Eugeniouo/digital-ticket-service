@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { escapeHtml, button, badge } from '../src/shared/html.js';
 import { createStaffViews } from '../src/staff-views.js';
 import { departments, servicesForDepartment } from '../src/mock-data.js';
-import { getDailyReport, dateOffset } from '../src/staff-analytics.js';
+import { dateOffset, dateValueFromOffset } from '../src/staff-analytics.js';
 
 const catalog = servicesForDepartment(departments[0].id);
 
@@ -58,16 +58,6 @@ test('problem text cannot inject HTML into overview', () => {
   assert.doesNotMatch(createStaffViews(() => state).overview(), /<img src=x/);
 });
 
-test('daily reports change dates and keep totals consistent', () => {
-  const today = new Date(2026, 8, 20);
-  const first = getDailyReport(0, today);
-  const previous = getDailyReport(-1, today);
-  assert.notEqual(first.label, previous.label);
-  assert.notEqual(first.total, previous.total);
-  assert.equal(previous.total, previous.sources.reduce((sum, [, count]) => sum + count, 0));
-  assert.equal(previous.total, previous.hourly.reduce((sum, count) => sum + count, 0));
-});
-
 test('calendar accepts past dates and rejects invalid or future dates', () => {
   const today = new Date(2026, 8, 21);
   assert.equal(dateOffset('2026-09-21', today), 0);
@@ -75,5 +65,5 @@ test('calendar accepts past dates and rejects invalid or future dates', () => {
   assert.equal(dateOffset('2026-09-22', today), null);
   assert.equal(dateOffset('2026-02-30', today), null);
   assert.equal(dateOffset('', today), null);
-  assert.equal(getDailyReport(-20, today).dateValue, '2026-09-01');
+  assert.equal(dateValueFromOffset(-20, today), '2026-09-01');
 });

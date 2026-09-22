@@ -1,10 +1,10 @@
-import { getDailyReport } from './staff-analytics.js';
+import { todayDateValue } from './staff-analytics.js';
 
 /** Accessible modal date picker, styled with the application palette. */
 export function openReportCalendar(selected, onSelect) {
   const [year, month] = selected.split('-').map(Number);
   let viewed = new Date(year, month - 1, 1);
-  const today = getDailyReport().dateValue;
+  const today = todayDateValue();
   const previousFocus = document.activeElement;
   const dialog = document.createElement('dialog');
   dialog.className = 'report-calendar';

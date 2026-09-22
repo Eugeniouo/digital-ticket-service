@@ -1,12 +1,20 @@
 import './manager-guard.js';
 import { currentOperator } from './operator-accounts.js';
-import { departments } from './mock-data.js';
 import { departmentCaption, departmentOptionLabel } from './shared/department.js';
+import { departmentApi } from './staff/api.js';
 
 const site = document.querySelector('#site-url');
 const select = document.querySelector('#qr-department');
 const message = document.querySelector('#qr-message');
-const department = departments.find(item => item.id === currentOperator().department_id);
+const staff = currentOperator();
+let department = null;
+if (staff?.department_id) {
+  try {
+    department = await departmentApi.get(staff.department_id);
+  } catch {
+    department = null;
+  }
+}
 if (department) {
   select.add(new Option(departmentOptionLabel(department), department.id));
 }

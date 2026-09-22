@@ -1,53 +1,50 @@
-import { signIn } from './demo-session.js';
-import { authenticate, initializeManager, listOperators } from './operator-accounts.js';
-import { departments } from './mock-data.js';
+import { ApiError } from './shared/api.js';
 import { departmentOptionLabel } from './shared/department.js';
+import { setStaffSession } from './shared/staff-session.js';
+import { authApi, departmentApi } from './staff/api.js';
 
 const form = document.querySelector('#login-form');
 const error = document.querySelector('#login-error');
-const setupFields = document.querySelector('#setup-fields');
-const nameInput = form.elements.display_name;
 const select = form.elements.department_id;
+const submit = form.querySelector('button[type=submit]');
 
-for (const department of departments) select.add(new Option(departmentOptionLabel(department), department.id));
-
-function needsSetup(departmentId) {
-  return !listOperators().some(account => account.role === 'admin' && account.department_id === departmentId);
+async function loadDepartments() {
+  try {
+    const departments = await departmentApi.list();
+    select.replaceChildren();
+    for (const department of departments) {
+      select.add(new Option(departmentOptionLabel(department), department.id));
+    }
+    if (!departments.length) {
+      error.textContent = 'Нет отделений. Сначала заполните справочник.';
+      submit.disabled = true;
+    }
+  } catch {
+    error.textContent = 'Не удалось загрузить отделения.';
+    submit.disabled = true;
+  }
 }
-
-function applySetup() {
-  const setup = needsSetup(select.value);
-
-  document.querySelector('#login-title').textContent = setup ? 'Настройка руководителя' : 'Вход для сотрудников';
-  document.querySelector('.description').textContent = setup
-    ? 'В этом отделении ещё нет руководителя. Создайте локальный аккаунт.'
-    : 'Войдите в рабочее пространство отделения';
-  setupFields.hidden = !setup;
-  nameInput.required = setup;
-  form.elements.password.autocomplete = setup ? 'new-password' : 'current-password';
-  form.querySelector('button[type=submit]').textContent = setup ? 'Создать и войти' : 'Войти';
-}
-
-applySetup();
-select.addEventListener('change', applySetup);
 
 form.addEventListener('submit', async event => {
   event.preventDefault();
-  const button = form.querySelector('button[type=submit]');
-  button.disabled = true;
+  submit.disabled = true;
   try {
-    const departmentId = select.value;
-    if (needsSetup(departmentId)) await initializeManager({
-      username: form.elements.username.value, password: form.elements.password.value,
-      display_name: nameInput.value, department_id: departmentId,
+    const result = await authApi.signIn({
+      username: form.elements.username.value,
+      password: form.elements.password.value,
+      department_id: select.value,
     });
-    const id = await authenticate(form.elements.username.value, form.elements.password.value, departmentId);
-    sessionStorage.setItem('pochta-demo-operator-id', id);
-    signIn();
-    form.reset();
+    setStaffSession(result.access_token, result.staff);
     location.assign('/src/staff.html');
-  } catch (failure) { error.textContent = failure.message; }
-  finally { button.disabled = false; }
+  } catch (failure) {
+    error.textContent = failure instanceof ApiError && failure.status === 401
+      ? 'Неверный логин или пароль.'
+      : 'Не удалось войти. Попробуйте ещё раз.';
+  } finally {
+    submit.disabled = false;
+  }
 });
 form.addEventListener('input', () => { error.textContent = ''; });
 form.addEventListener('change', () => { error.textContent = ''; });
+
+loadDepartments();

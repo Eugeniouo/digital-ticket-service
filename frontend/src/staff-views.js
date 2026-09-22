@@ -1,10 +1,10 @@
-import { getDailyReport } from "./staff-analytics.js";
 import {
   escapeHtml as esc,
   button as btn,
   badge as pill,
 } from "./shared/html.js";
 import { ticketSourceLabel } from "./shared/ticket-source.js";
+import { QUEUE_RULE_FIELDS, RULE_MINUTE_MAX, RULE_MINUTE_MIN } from "./staff/queue-rules.js";
 /** Screen templates read current state without changing it. */
 export function createStaffViews(getState) {
   const serviceName = (serviceId) =>
@@ -97,42 +97,67 @@ export function createStaffViews(getState) {
         "",
       )}</div><div class="row"><h2>Работа окон</h2><span class="muted">4 из 6 · демонстрация</span></div>${windows()}<div class="grid two section-gap"><section class="card"><h2>Очередь отделения</h2>${table()}</section><section class="card"><h2>Требует внимания</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Все проблемы →", "problems", "ghost")}</section></div>`;
   }
+  function minutesLabel(value) {
+    return value == null ? "—" : `${value} мин`;
+  }
   function analytics() {
-    const { analyticsOffset = 0 } = getState();
-    const report = getDailyReport(analyticsOffset);
-    return `<section class="card row section-gap" style="margin:0 0 24px"><button class="ghost" data-action="analytics-previous" aria-label="Предыдущий день">←</button><div style="text-align:center"><div class="report-date"><span>${report.label}</span><button class="report-date-toggle" data-action="open-report-calendar" aria-label="Открыть календарь"><span aria-hidden="true"></span></button><input id="analytics-date" class="report-date-input" type="date" aria-label="Дата отчёта" value="${report.dateValue}" max="${getDailyReport().dateValue}"></div><div class="muted">Статистика за день · демонстрационные данные</div></div><div class="row">${btn("Сегодня", "analytics-today", "ghost compact", analyticsOffset === 0)}<button class="ghost" data-action="analytics-next" aria-label="Следующий день" ${analyticsOffset === 0 ? "disabled" : ""}>→</button></div></section><div class="grid stats">${[
+    const {
+      analyticsOffset = 0,
+      analyticsDateValue = "",
+      analyticsToday = analyticsDateValue,
+      analyticsLabel = "",
+      analyticsReport: report,
+      analyticsStatus = "idle",
+    } = getState();
+    const label = report?.label ?? analyticsLabel;
+    const dateValue = report?.dateValue ?? analyticsDateValue;
+    const header = `<section class="card row section-gap" style="margin:0 0 24px"><button class="ghost" data-action="analytics-previous" aria-label="Предыдущий день">←</button><div style="text-align:center"><div class="report-date"><span>${esc(label)}</span><button class="report-date-toggle" data-action="open-report-calendar" aria-label="Открыть календарь"><span aria-hidden="true"></span></button><input id="analytics-date" class="report-date-input" type="date" aria-label="Дата отчёта" value="${esc(dateValue)}" max="${esc(analyticsToday)}"></div><div class="muted">Статистика за день</div></div><div class="row">${btn("Сегодня", "analytics-today", "ghost compact", analyticsOffset === 0)}<button class="ghost" data-action="analytics-next" aria-label="Следующий день" ${analyticsOffset === 0 ? "disabled" : ""}>→</button></div></section>`;
+    if (analyticsStatus === "error") {
+      return `${header}<section class="card"><p>Не удалось загрузить аналитику.</p>${btn("Повторить", "analytics-reload", "primary")}</section>`;
+    }
+    if (analyticsStatus !== "ready" || !report) {
+      return `${header}<section class="card"><p class="muted">Загружаем статистику…</p></section>`;
+    }
+    const peak = Math.max(0, ...report.hourly.map((item) => item.count));
+    const stats = [
       [report.total, "Обслужено"],
-      [report.averageWait + " мин", "Среднее ожидание"],
-      [report.maximumWait + " мин", "Максимальное ожидание"],
-      [report.averageService + " мин", "Среднее обслуживание"],
+      [minutesLabel(report.averageWait), "Среднее ожидание"],
+      [minutesLabel(report.maximumWait), "Максимальное ожидание"],
+      [minutesLabel(report.averageService), "Среднее обслуживание"],
     ]
-      .map(
-        ([a, b]) =>
-          `<div class="card"><span class="muted">${b}</span><div class="metric">${a}</div></div>`,
-      )
-      .join(
-        "",
-      )}</div><div class="grid two"><section class="card"><h2>Обслуженные клиенты по часам</h2><p class="muted">${report.label} · иллюстративные данные</p><div class="bars">${report.hourly.map((n, i) => `<div class="bar">${n}<i style="height:${n * 4}px"></i>${9 + i}:00</div>`).join("")}</div></section><section class="card"><h2>Источники обращений</h2>${report.sources
-      .map(
-        ([s, n]) =>
-          `<div class="queue-item row"><span>${esc(ticketSourceLabel(s))}</span><strong>${n}</strong></div>`,
-      )
-      .join(
-        "",
-      )}</section></div><section class="card section-gap"><h2>Загрузка окон</h2><p class="muted">Доля обслуживания от времени открытого окна · демонстрационные данные</p>${report.utilization.map((n, i) => `<div class="queue-item"><div class="row"><span>Окно № ${i + 1}</span><strong>${n}%</strong></div><div style="height:8px;background:#eef0ff;border-radius:8px;margin-top:12px"><div style="width:${n}%;background:#1928dc;height:8px;border-radius:8px"></div></div></div>`).join("")}</section>`;
+      .map(([value, caption]) => `<div class="card"><span class="muted">${caption}</span><div class="metric">${value}</div></div>`)
+      .join("");
+    const hours = report.hourly
+      .map((item) => {
+        const height = peak === 0 ? 8 : Math.max(8, Math.round((item.count / peak) * 140));
+        return `<div class="bar">${item.count}<i style="height:${height}px"></i>${esc(item.label)}</div>`;
+      })
+      .join("");
+    const sources = report.sources
+      .map((item) => `<div class="queue-item row"><span>${esc(item.label)}</span><strong>${item.count}</strong></div>`)
+      .join("");
+    const windowsLoad = report.windows
+      .map((item) => {
+        const shown = item.percent == null ? "—" : `${item.percent}%`;
+        const width = item.percent == null ? 0 : Math.min(100, Math.max(0, item.percent));
+        return `<div class="queue-item"><div class="row"><span>${esc(item.label)}</span><strong>${shown}</strong></div><div style="height:8px;background:#eef0ff;border-radius:8px;margin-top:12px"><div style="width:${width}%;background:#1928dc;height:8px;border-radius:8px"></div></div></div>`;
+      })
+      .join("");
+    return `${header}<div class="grid stats">${stats}</div><div class="grid two"><section class="card"><h2>Обслуженные клиенты по часам</h2><p class="muted">${esc(report.label)}</p><div class="bars">${hours}</div></section><section class="card"><h2>Источники обращений</h2>${sources}</section></div><section class="card section-gap"><h2>Загрузка окон</h2><p class="muted">Доля обслуживания от времени открытого окна</p>${windowsLoad || '<p class="muted">Окон в отделении нет</p>'}</section>`;
   }
   function rulesView() {
-    const {
-      queue,
-      current,
-      opened,
-      closing,
-      enabled,
-      served,
-      problems,
-      rules,
-    } = getState();
-    return `<section class="card"><h2>Баланс записи и живой очереди</h2><p class="muted">Пример настроек. В прототипе они сохраняются только до обновления страницы и не меняют демонстрационный порядок вызова.</p><div class="form-grid">${["Раннее прибытие, минут", "Допустимое опоздание, минут", "Повышение приоритета после, минут", "Последовательных вызовов по записи"].map((s, i) => `<div><label for="rule-${i}">${s}</label><input id="rule-${i}" type="number" min="1" max="120" value="${rules[i]}"></div>`).join("")}</div><div class="alert">Порог повышения приоритета не гарантирует обслуживание за указанное время. Ожидание зависит от нагрузки и доступных окон.</div><p class="muted">Внутри одинакового приоритета — порядок поступления. Уже вызванный клиент остаётся закреплённым за окном.</p>${btn("Сохранить настройки", "save-rules", "primary")}</section>`;
+    const { rules, rulesStatus = "idle" } = getState();
+    if (rulesStatus === "error") {
+      return `<section class="card"><h2>Правила очереди</h2><p>Не удалось загрузить правила очереди.</p>${btn("Повторить", "reload-rules", "primary")}</section>`;
+    }
+    if (rulesStatus === "loading" || rulesStatus === "idle" || !rules) {
+      return `<section class="card"><h2>Правила очереди</h2><p class="muted">Загружаем настройки…</p></section>`;
+    }
+    const busy = rulesStatus === "saving";
+    const fields = QUEUE_RULE_FIELDS.map(
+      (field) => `<div><label for="rule-${field.key}">${esc(field.label)}</label><input id="rule-${field.key}" name="${field.key}" type="number" min="${RULE_MINUTE_MIN}" max="${RULE_MINUTE_MAX}" step="1" value="${esc(rules[field.key] ?? 0)}" ${busy ? "disabled" : ""}></div>`,
+    ).join("");
+    return `<section class="card"><h2>Правила очереди</h2><p class="muted">Коэффициенты отделения. Изменения действуют на следующий вызов из очереди.</p><div class="form-grid">${fields}</div><div class="alert">Бонус сдвигает источник раньше в порядке вызова. Порог ожидания QR и живой очереди поднимает талон после указанного времени; для записи это срок, после которого слот снимается как неявка. Порог не гарантирует обслуживание за указанное время — ожидание зависит от нагрузки и открытых окон.</div><p class="muted">Внутри одинакового приоритета сохраняется порядок поступления. Вызванный клиент остаётся закреплённым за окном.</p>${btn("Сохранить настройки", "save-rules", "primary", busy)}</section>`;
   }
   return {
     queueList,
