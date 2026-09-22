@@ -15,6 +15,12 @@
         <h1 id="login-title">Вход для сотрудников</h1>
         <p class="description">Войдите в рабочее пространство отделения</p>
         <form id="login-form">
+          <label for="department">Отделение</label>
+          <select id="department" name="department_id" required></select>
+          <div id="setup-fields" hidden>
+            <label for="setup-name">Имя руководителя</label>
+            <input id="setup-name" name="display_name" maxlength="100">
+          </div>
           <label for="login">Логин</label>
           <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required minlength="3" maxlength="40" autocapitalize="none" spellcheck="false">
           <label for="password">Пароль</label>

@@ -34,11 +34,11 @@ class AuthService:
     def __init__(self, repository: StaffRepository = Depends()) -> None:
         self.repository = repository
 
-    async def sign_in(self, username: str, password: str) -> TokenResponse:
+    async def sign_in(self, username: str, password: str, department_id: UUID | None) -> TokenResponse:
         username = username.strip().lower()
         password = password.strip()
 
-        staff = await self.repository.get_by_username(username)
+        staff = await self.repository.get_by_username(username, department_id)
         if staff is None or not verify_password(password, staff.password_hash):
             raise InvalidCredentialsError
         if not staff.is_active:

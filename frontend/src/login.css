@@ -15,7 +15,7 @@ select { width: 100%; min-height: 52px; border: 1px solid #e1e3eb; border-radius
 button { font: inherit; cursor: pointer; }
 .login-submit { width: 100%; min-height: 53px; border: 0; border-radius: 12px; background: #1928dc; color: white; font-size: 18px; font-weight: 500; }
 .login-submit:hover { background: #1420bd; }
-input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #86bbff; outline-offset: 3px; }
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #86bbff; outline-offset: 3px; }
 .error { color: #c52e36; font-size: 13px; min-height: 16px; margin: 12px 0; }
 .demo-note { font-size: 12px; line-height: 1.6; color: #747988; padding: 14px; background: #f6f7f9; border-radius: 12px; margin: 24px 0; }
 .visitor-link { display: block; text-align: center; font-size: 13px; text-decoration: none; color: #1928dc; }

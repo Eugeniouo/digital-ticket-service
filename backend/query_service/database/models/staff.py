@@ -10,8 +10,10 @@ from sqlalchemy import (
     CheckConstraint,
     Enum,
     ForeignKey,
+    Index,
     String,
     Uuid,
+    text,
     true,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -39,7 +41,6 @@ class Staff(Base):
     username: Mapped[str] = mapped_column(
         String,
         nullable=False,
-        unique=True,
     )
 
     display_name: Mapped[str] = mapped_column(
@@ -85,5 +86,18 @@ class Staff(Base):
         CheckConstraint(
             "(role IN ('operator', 'admin') AND department_id IS NOT NULL) OR (role = 'root' AND department_id IS NULL)",
             name="ck_staff_role_department",
+        ),
+        Index(
+            "uq_staff_username_department",
+            "username",
+            "department_id",
+            unique=True,
+            postgresql_where=text("department_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_staff_root_username",
+            "username",
+            unique=True,
+            postgresql_where=text("department_id IS NULL"),
         ),
     )

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import TYPE_CHECKING
+from enum import Enum as PyEnum
+from typing import TYPE_CHECKING, Self
 from uuid import UUID, uuid4
 
 from query_service.database.base import Base
@@ -21,13 +21,22 @@ if TYPE_CHECKING:
     from .window import Window
 
 
-class ServiceKind(StrEnum):
-    PARCEL_RECEIVE = "parcel_receive"
-    PARCEL_SEND = "parcel_send"
-    LETTERS = "letters"
-    PAYMENTS = "payments"
-    PENSION = "pension"
-    OTHER = "other"
+class ServiceKind(str, PyEnum):  # noqa: UP042
+    PARCEL_RECEIVE = "parcel_receive", "П"
+    PARCEL_SEND = "parcel_send", "П"
+    LETTERS = "letters", "М"
+    PAYMENTS = "payments", "К"
+    PENSION = "pension", "С"
+    OTHER = "other", "У"
+
+    prefix: str
+
+    def __new__(cls, value: str, prefix: str) -> Self:
+        obj = str.__new__(cls, value)
+        obj._value_ = value
+        obj.prefix = prefix
+
+        return obj
 
 
 _SERVICE_KIND = Enum(

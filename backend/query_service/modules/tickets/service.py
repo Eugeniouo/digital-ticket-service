@@ -106,7 +106,7 @@ class TicketService:
 
         priority_key = compute_priority_key(effective_start)
 
-        prefix = service.kind.value
+        prefix = service.kind.prefix
         next_number = await self.repository.get_next_ticket_number(department_id, prefix)
         ticket_label = f"{prefix}-{next_number:03d}"
 

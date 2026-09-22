@@ -60,10 +60,8 @@ class DemoDepartment:
 
 DEMO_PASSWORD = "password"  # noqa: S105
 
-DEMO_ADMIN_1 = "admin1"
-DEMO_OP_1 = "op1"
-DEMO_ADMIN_2 = "admin2"
-DEMO_OP_2 = "op2"
+DEMO_ADMIN = "admin"
+DEMO_OP = "op"
 
 DEMO_SERVICES: tuple[DemoService, ...] = (
     DemoService(name="Получение посылки", duration_time=10, kind="parcel_receive"),
@@ -80,8 +78,8 @@ DEMO_CATALOG: tuple[DemoDepartment, ...] = (
         address="Отделение Центр",
         open_time="09:00:00",
         close_time="18:00:00",
-        admin_username=DEMO_ADMIN_1,
-        operator_username=DEMO_OP_1,
+        admin_username=DEMO_ADMIN,
+        operator_username=DEMO_OP,
         services=DEMO_SERVICES,
         windows=(
             DemoWindow(label="Окно 1", service_kinds=tuple(item.kind for item in DEMO_SERVICES)),
@@ -93,8 +91,8 @@ DEMO_CATALOG: tuple[DemoDepartment, ...] = (
         address="Отделение Север",
         open_time="09:00:00",
         close_time="18:00:00",
-        admin_username=DEMO_ADMIN_2,
-        operator_username=DEMO_OP_2,
+        admin_username=DEMO_ADMIN,
+        operator_username=DEMO_OP,
         services=DEMO_SERVICES,
         windows=(
             DemoWindow(label="Окно 1", service_kinds=tuple(item.kind for item in DEMO_SERVICES)),
@@ -242,7 +240,7 @@ async def _ensure_staff(
     department_id: str,
 ) -> None:
     for item in await _list_staff(http, token):
-        if item.get("username") == username:
+        if item.get("username") == username and item.get("department_id") == department_id:
             return
 
     status, data = await http.request(

@@ -65,6 +65,7 @@ class SignInRequest(BaseModel):
 
     username: SignInUsername
     password: Password
+    department_id: UUID | None = None
 
 
 class TokenResponse(BaseModel):
