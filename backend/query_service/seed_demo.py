@@ -61,7 +61,7 @@ class DemoDepartment:
 DEMO_PASSWORD = "password"  # noqa: S105
 
 DEMO_ADMIN = "admin"
-DEMO_OP = "op"
+DEMO_OP = "operator"
 
 DEMO_SERVICES: tuple[DemoService, ...] = (
     DemoService(name="Получение посылки", duration_time=10, kind="parcel_receive"),

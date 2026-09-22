@@ -26,6 +26,12 @@ export function createTicketStorage(getStorage = () => window.localStorage) {
         return true
       } catch { return false }
     },
+    clear() {
+      try {
+        getStorage().removeItem(TICKET_STORAGE_KEY)
+        return true
+      } catch { return false }
+    },
   }
 }
 

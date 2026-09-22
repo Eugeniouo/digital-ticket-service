@@ -81,6 +81,7 @@ button:focus-visible, input:focus-visible, .choice-strip:focus-visible { outline
 .date-screen .calendar-days { padding-block: 12px; }
 .date-screen .calendar-day { width: 56px; height: 60px; gap: 4px; font-size: 16px; line-height: 20px; }
 .date-screen .time-groups { gap: 12px; padding-block: 10px 14px; }
+.date-screen .time-groups .empty-results { margin: 0 12px; font-size: 13px; line-height: 18px; }
 .time-group-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 12px 6px; }
 .time-group-heading h2 { margin: 0; font-size: 13px; line-height: 18px; }
 .time-scroll-controls { display: flex; gap: 4px; }
