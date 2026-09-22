@@ -1,207 +1,509 @@
-# query_service
+# Электронная очередь нового поколения
 
-This project was generated using fastapi_template.
+MVP электронной очереди для хакатона Почты России.
+Клиент, оператор и руководитель работают в браузере на своих устройствах.
+Очередь живёт на сервере, состояние хранится в PostgreSQL и переживает рестарт.
 
-## UV
+Три способа входа сходятся в одну очередь отделения: предварительная запись на слот, электронный талон по QR в зале и живая очередь у оператора.
 
-This project uses uv. It's a modern dependency management
-tool.
+## Содержание
 
-To run the project use this set of commands:
+- [Цель](#цель)
+- [Что сделано](#что-сделано)
+- [Архитектура](#архитектура)
+- [Возможности](#возможности)
+- [Алгоритм очереди](#алгоритм-очереди)
+- [Запуск](#запуск)
+- [Структура проекта](#структура-проекта)
+- [Команды разработки](#команды-разработки)
+- [Уведомления](#уведомления)
+- [Развитие и масштабирование](#развитие-и-масштабирование)
 
-```bash
-uv sync --locked
-uv run -m query_service
+## Цель
+
+Физические системы управления очередью стоят только в части отделений.
+Их установка и сопровождение требуют оборудования в каждом ОПС, поэтому сеть из десятков тысяч точек развивается неравномерно.
+
+Проект показывает очередь на телефонах клиентов и компьютерах сотрудников, с правилами обслуживания, которые задаются централизованно и настраиваются в отделении.
+
+Пользователи решения:
+
+- клиент — записывается заранее или берёт талон в отделении;
+- оператор — ведёт окно и вызывает следующего;
+- руководитель отделения — настраивает окна, правила и смотрит день;
+- `root` — заводит отделения и учётки сети.
+
+## Что сделано
+
+К проверке готовы обязательные сценарии ТЗ: запись, QR-талон, вызов свободным окном, конкурентный вызов с блокировкой талона, закрытие окна, перенаправление, рестарт с сохранением очереди, недоступность шлюза уведомлений, конкурентная выдача номеров и аналитика дня.
+
+| Слой | Результат |
+|---|---|
+| Клиент | адаптивный веб-интерфейс записи, QR и статуса талона |
+| Оператор | рабочее место окна: открытие, вызов, обслуживание, неявка |
+| Руководитель | окна, правила приоритета, очередь, аналитика, сотрудники, QR-плакат |
+| Сервер | REST API, OpenAPI, журнал статусов талона, модуль уведомлений |
+| Данные | PostgreSQL как источник истины; очередь восстанавливается после рестарта |
+| Интеграции | демонстрационный адаптер уведомлений за портом `NotificationGateway` |
+| Запуск | полный стек через Docker Compose |
+
+Интерфейс показывает состояние и отправляет команды.
+Порядок вызова, номера талонов, слоты и блокировки считает сервер.
+
+## Архитектура
+
+```
+Клиент / оператор / руководитель
+                 │
+              Caddy
+          ┌──────┴──────┐
+     frontend          /api
+                        │
+                     FastAPI
+                   ┌────┼────┐
+            PostgreSQL  Valkey  Celery
 ```
 
-Or with `just`:
+Caddy отдаёт один origin: страницы фронтенда и `/api`.
+Браузер ходит на API тем же origin, JWT передаётся заголовком `Authorization: Bearer`.
+Состояние очереди и outbox уведомлений живут в PostgreSQL.
+Valkey — брокер Celery: воркер забирает pending-записи outbox и отдаёт их адаптеру шлюза.
 
-```bash
+### Стек
+
+| Компонент | Назначение |
+|---|---|
+| Python 3.12+, FastAPI, SQLAlchemy, Alembic | сервер очереди и миграции |
+| PostgreSQL | отделения, талоны, слоты, журнал, outbox |
+| Valkey и Celery | доставка уведомлений вне транзакции вызова |
+| Caddy | прокси UI и API, один origin |
+| HTML, CSS, JavaScript без фреймворка | клиент, оператор, руководитель |
+| JWT и Argon2 | вход сотрудников |
+| Docker Compose | воспроизводимый запуск |
+
+Сервер — набор доменных модулей: схема, репозиторий, сервис, HTTP-обработчик.
+Внешние системы подключаются через порты в `backend/query_service/integrations/`.
+Контракт API: `/api/docs`. Секреты живут в `.env`.
+
+Стек собирается из компонентов, которые можно развернуть в контуре без облачных SaaS: PostgreSQL, Python, Valkey (протокол Redis), Caddy, браузерный клиент без фреймворка.
+
+### Роли
+
+| Роль | Кто это | Что может |
+|---|---|---|
+| `operator` | сотрудник окна | открыть и закрыть своё окно, вызвать, обслужить, вернуть, перенаправить, отметить неявку, завести живую очередь, сообщить о проблеме |
+| `admin` | руководитель отделения | окна и услуги, правила приоритета, очередь отделения, аналитика дня, учётки сотрудников отделения, QR-плакат, журнал талона, список проблем |
+| `root` | администратор сети | каталог отделений и любые учётки |
+
+Оператор и руководитель привязаны к одному `department_id`.
+`root` живёт без отделения.
+
+### Идентификаторы
+
+В API, QR и сессии талона идентификатор — UUID.
+
+Люди видят другое:
+
+- код отделения (`DEMO01`) и адрес;
+- название услуги;
+- номер талона (`П-001`, `С-014`);
+- подпись окна (`Окно 1`).
+
+Номер талона уникален в отделении за календарный день очереди (по умолчанию `Europe/Moscow`).
+Префикс берётся из вида услуги: посылки — `П`, письма — `М`, платежи — `К`, пенсия — `С`, прочие — `У`.
+Счётчик инкрементируется атомарно в PostgreSQL, поэтому параллельная выдача не даёт два одинаковых номера.
+
+## Возможности
+
+### Клиент
+
+- выбор отделения и услуги;
+- запись на свободный слот (дата и время);
+- талон по QR в зале: камера на телефоне или страница отделения;
+- статус талона, оценка ожидания, номер окна после вызова;
+- отмена записи, пока талон в статусе `queued`;
+- сессия в `localStorage` и в URL: после обрыва связи клиент возвращается к своему талону;
+- опрос статуса раз в 5 секунд, пока талон живой.
+
+Запись создаёт талон источника `web` и занимает ёмкость слота.
+QR создаёт талон источника `qr` без слота.
+Вход и установка приложения не нужны.
+
+### Оператор
+
+- открытие и закрытие окна, набор услуг на смене;
+- одно окно — один оператор: занятое окно и вторая посадка дают конфликт;
+- добавление клиента из живой очереди (`walk-in`);
+- вызов следующего, старт и завершение обслуживания;
+- возврат в очередь и перенаправление на другую услугу;
+- фиксация неявки вызванного клиента;
+- источник талона на карточке: запись, QR, живая очередь;
+- сообщение о технической или операционной проблеме.
+
+Порядок очереди на экране совпадает с серверным `call-next`.
+Сервер отдаёт следующего подходящего, оператор вызывает того, кого вернул API.
+
+### Руководитель
+
+- окна отделения и перечень услуг на окне;
+- правила приоритета отделения (бонусы каналов и пороги ожидания);
+- очередь в реальном времени и незавершённые талоны;
+- аналитика дня: обслужено, среднее и максимальное ожидание, загрузка окон, источники обращений, почасовые столбики;
+- журнал смены статусов талона;
+- учётки сотрудников отделения и смена пароля;
+- QR-плакат отделения;
+- список проблем.
+
+### Серверные гарантии
+
+- один клиент не назначается двум окнам: окно блокируется, талон берётся `FOR UPDATE SKIP LOCKED`;
+- состояние очереди целиком в БД, рестарт API его не теряет;
+- каждое изменение статуса пишется в журнал;
+- некорректный запрос получает понятный код (`400`, `401`, `403`, `404`, `409`, `422`);
+- `/api/health` отвечает, пока процесс жив;
+- логи структурированы по времени, уровню и имени логгера.
+
+## Алгоритм очереди
+
+Один SQL-порядок на запись, QR и живую очередь.
+Правила лежат на отделении и меняются руководителем без пересчёта уже выданных талонов.
+
+`priority_key` хранит момент старта: начало слота для записи, момент прихода для QR и живой очереди.
+Бонус канала в ключ не записывается.
+В момент вызова сервер считает эффективный приоритет:
+
+```
+effective = priority_key − bonus(source)
+```
+
+Меньшее значение вызывается раньше.
+Запись с бонусом 5 минут оказывается в выдаче так, как будто пришла на пять минут раньше своего слота.
+
+### Кто может быть вызван
+
+- QR и живая очередь доступны сразу после выдачи.
+- Запись входит в выдачу только с начала слота и до истечения `max_wait_web`.
+- Просроченная запись снимается как неявка (`canceled`, причина `noshow`) при следующем `call-next` или при запросе талона.
+
+### Порядок `ORDER BY`
+
+1. Просроченные QR и живая очередь (ждали дольше `max_wait_*`) — выше остальных. Это ограничение ожидания «с улицы».
+2. Эффективный приоритет по возрастанию.
+3. `created_at` по возрастанию: внутри одного уровня — FIFO.
+
+Запись на слот учитывается временем слота, а не временем оформления.
+Долгая живая очередь и QR поднимаются антиголоданием, когда их ожидание пересекает порог отделения.
+
+### Значения по умолчанию
+
+Новое отделение получает значения из настроек сервера.
+Руководитель потом меняет их в минутах в кабинете; API хранит секунды.
+
+| Параметр | По умолчанию | Смысл |
+|---|---|---|
+| `bonus_web` | 300 с (5 мин) | преимущество предварительной записи |
+| `bonus_qr` | 0 | QR идёт по времени прихода |
+| `bonus_walk_in` | 0 | живая очередь идёт по времени прихода |
+| `max_wait_web` | 900 с (15 мин) | запись сгорает после начала слота |
+| `max_wait_qr` | 1200 с (20 мин) | порог антиголодания QR |
+| `max_wait_walk_in` | 1200 с (20 мин) | порог антиголодания живой очереди |
+
+### Спорные ситуации
+
+**Два окна вызывают одновременно.**
+Каждое окно берёт блокировку на себя и выбирает талон с `SKIP LOCKED`.
+Один талон не может оказаться на двух окнах.
+
+**Закрытие окна с активным клиентом.**
+При талоне в статусе `called` или `serving` API отвечает `409`.
+Сначала нужно завершить обслуживание, вернуть клиента в очередь, перенаправить или отметить неявку.
+Талон остаётся на окне, пока оператор явно его не снимет.
+
+**Перенаправление.**
+Талон становится живой очередью на новую услугу: слот сбрасывается, `priority_key` пересчитывается от текущего момента.
+Исходный канал и слот сохраняются в `origin_*` для аналитики.
+
+**Возврат в очередь.**
+Клиент снова `queued` на той же услуге, окно освобождается, приоритет считается заново от текущего времени.
+
+**Неявка.**
+Талон переходит в `canceled` с причиной `NOSHOW`, слот записи освобождается, в outbox уходит `ticket.noshow`.
+
+## Запуск
+
+Нужны Docker и Docker Compose.
+[Just](https://github.com/casey/just) удобен, но не обязателен: ниже есть те же шаги через Compose.
+
+### 1. Переменные окружения
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Или: `just env`.
+
+Для локального демо в `.env` задайте:
+
+```env
+QUERY_SERVICE_JWT_SECRET="dev-jwt-secret-change-me-32bytes-min"
+QUERY_SERVICE_BOOTSTRAP_USERNAME="root"
+QUERY_SERVICE_BOOTSTRAP_PASSWORD="change-me"
+QUERY_SERVICE_SEED_API_URL="http://127.0.0.1:8000"
+QUERY_SERVICE_FRONTEND_ORIGIN="http://localhost:18080"
+QUERY_SERVICE_VISITOR_PATH="/src/visitor.html"
+```
+
+`SEED_API_URL` — адрес API, на который seed ходит с хоста.
+`FRONTEND_ORIGIN` — origin, который попадает в QR посетителя.
+
+### 2. Поднять стек
+
+```powershell
 just run
 ```
 
-This will start the server on the configured host.
+Эквивалент:
 
-You can find swagger documentation at `/api/docs`.
-
-You can read more about uv here: [https://docs.astral.sh/ruff/](https://docs.astral.sh/ruff/)
-
-## Docker
-
-You can start the project with docker using this command:
-
-```bash
+```powershell
 docker compose up --build
 ```
 
-This command exposes the web application on port 8000, mounts current directory and enables autoreload.
+Поднимаются API, PostgreSQL, миграции, bootstrap `root`, Valkey, Celery worker, Celery beat, frontend и Caddy.
 
-But you have to rebuild image every time you modify `uv.lock` or `pyproject.toml` with this command:
+Дождитесь, пока API отвечает на проверку живости:
 
-```bash
-docker compose build
+```powershell
+curl http://localhost:8000/api/health
 ```
 
+| Что | Адрес |
+|---|---|
+| Интерфейс | http://localhost:18080 |
+| OpenAPI | http://localhost:8000/api/docs |
+| Проверка живости | http://localhost:8000/api/health |
 
+### 3. Загрузить демо-данные
 
-## Project structure
+В **другом** терминале, пока стек запущен:
 
-```bash
-$ tree backend
-backend
-├── query_service
-│   ├── __main__.py      # Startup script. Starts uvicorn.
-│   ├── application.py   # FastAPI application configuration.
-│   ├── lifespan.py      # Actions to perform on startup and shutdown.
-│   ├── settings.py      # Main configuration settings for project.
-│   ├── log.py           # Logging configuration.
-│   ├── api              # Package with all handlers.
-│   │   └── router.py    # Main router.
-│   ├── database         # SQLAlchemy session, models, utils.
-│   ├── migrations       # Alembic migrations.
-│   └── modules          # Feature modules (handlers, schemas, services, repositories, exceptions).
-└── tests                # Tests for project.
-    └── conftest.py      # Fixtures for all tests.
-```
-
-
-
-## Adding a feature
-
-Copy `backend/query_service/modules/dummy` as a template.
-
-1. Create `backend/query_service/modules/<feature>/` with:
-  - `schema.py` — request/response DTOs;
-  - `repository.py` — database access;
-  - `service.py` — business logic;
-  - `handler.py` — FastAPI router;
-  - optional `exceptions.py`.
-2. Add a SQLAlchemy model in `database/` and generate a migration if the table is new.
-3. Export `router` from the module `__init__.py`.
-4. Include it in `backend/query_service/api/router.py`.
-5. Add tests under `backend/tests/`.
-
-
-
-## Configuration
-
-This application can be configured with environment variables.
-
-Copy `.env.example` to `.env` in the repository root (`just env` does this if `.env` is missing)
-and edit the values. `.env` is gitignored. 
-
-All environment variables should start with "QUERY_SERVICE_" prefix.
-
-For example if you see in your "backend/query_service/settings.py" a variable named like
-`random_parameter`, you should provide the "QUERY_SERVICE_RANDOM_PARAMETER" 
-variable to configure the value. This behaviour can be changed by overriding `env_prefix` property
-in `query_service.settings.Settings`.
-
-See `.env.example` for a starter file.
-
-Staff sign-in is `POST /api/auth/signin` with `username`, `password`, and `department_id` for department staff. Omit `department_id` for the `root` account. The migrator creates a `root` account when bootstrap username and password are set and that username does not exist yet as root.
-
-After `docker compose up` the catalog is empty: `GET /api/departments` returns `[]` until you seed it. With the API already listening on port 8000:
-
-```bash
+```powershell
 just seed
 ```
 
-That calls the public HTTP API as `root` and creates two departments (`DEMO01`, `DEMO02`), services, windows with service bindings, department `admin` / `operator` accounts, and generated slots for today and tomorrow (Europe/Moscow). It is idempotent.
+Эквивалент, если `uv` установлен на хосте:
 
-Demo staff logins are constants in `backend/query_service/seed_demo.py`. The same username can exist in both departments. Password for all of them is `password`:
+```powershell
+uv run -m query_service.seed_demo
+```
 
-| username | role | department |
+Либо из контейнера API:
+
+```powershell
+docker compose exec api python -m query_service.seed_demo
+```
+
+Появляются отделения `DEMO01` и `DEMO02`, шесть услуг, окна, слоты на сегодня и завтра, учётки руководителя и оператора в каждом отделении.
+
+| Логин | Роль | Пароль | Отделение |
+|---|---|---|---|
+| `admin` | руководитель | `password` | DEMO01 или DEMO02 |
+| `operator` | оператор | `password` | DEMO01 или DEMO02 |
+| `root` | сеть | значение `QUERY_SERVICE_BOOTSTRAP_PASSWORD` | — |
+
+Seed идемпотентен: повторный запуск досоздаёт недостающее и не ломает уже выданные талоны.
+
+### 4. Короткий сценарий проверки
+
+1. Откройте http://localhost:18080 → **Записаться в отделение**, выберите `DEMO01`, услугу и слот. Запомните номер талона.
+2. Войдите как `operator` в то же отделение: http://localhost:18080/src/login.html. Откройте окно и вызовите следующего.
+3. Вернитесь к талону клиента (`/?view=ticket` или ссылка «Вернуться к моему талону»): должен появиться статус вызова и окно.
+4. Вторым браузером войдите тем же оператором нельзя на второе окно: посадка занята. Для конкурентного вызова заведите второго оператора через кабинет руководителя.
+5. Руководитель `admin`: правила очереди, аналитика дня, журнал талона, QR-плакат.
+
+### Публикация на VPS
+
+Порты 80 и 443, внешние порты БД и API закрыты:
+
+```powershell
+just prod
+```
+
+Эквивалент:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+```
+
+В `.env` задайте `SITE_ADDRESS` (хост Caddy, например `185-12-34-56.nip.io`) и публичный `QUERY_SERVICE_FRONTEND_ORIGIN`.
+
+### Разработка без полного Compose
+
+```powershell
+just run-be      # API, БД, миграции, bootstrap; http://localhost:8000
+just frontend    # страницы на http://localhost:4173
+just worker      # Celery worker
+just beat        # Celery beat
+```
+
+Браузерный клиент ходит на `/api` того же origin.
+Полный Compose с Caddy — основной способ для демонстрации и проверки.
+
+## Структура проекта
+
+```
+backend/query_service/     сервер очереди
+  api/                    маршруты, health, сборка OpenAPI
+  modules/                домены: auth, tickets, windows, slots, …
+  integrations/           порты внешних систем (уведомления)
+  database/               модели SQLAlchemy
+  migrations/             Alembic
+  seed_demo.py            демо-каталог через REST API
+  bootstrap_staff.py      создание root из .env
+frontend/                 веб-интерфейс (ES-модули, без фреймворка)
+  src/tickets/            сессия и API талона клиента
+  src/staff/              адаптеры сотрудника
+  src/shared/             fetch, JWT, идентификаторы
+proxy/                    Caddy: UI + /api
+docs/technical_task.md    техническое задание хакатона
+docker-compose.yml        локальный стек
+docker-compose.vps.yml    overlay для 80/443
+justfile                  команды разработки
+```
+
+Ресурсы отделения вложены в `/api/departments/{department_id}/…`: услуги, окна, слоты, талоны, проблемы, аналитика.
+
+## Команды разработки
+
+| Команда | Назначение |
+|---|---|
+| `just` | список команд |
+| `just env` | создать `.env` из примера |
+| `just run` | полный стек |
+| `just prod` | стек с overlay VPS |
+| `just run-be` | только API |
+| `just frontend` | dev-сервер UI |
+| `just seed` | демо-данные |
+| `just fresh` | сброс БД, миграции, root |
+| `just migrate` | применить миграции |
+| `just gen_migrations "…"` | новая миграция |
+| `just test` | тесты backend и frontend |
+| `just fmt` / `just lint` | формат и проверка Python |
+| `just logs api` | логи сервиса |
+| `just psql` | консоль PostgreSQL |
+| `just down` | остановить Compose и удалить тома |
+
+Переменные окружения сервера начинаются с `QUERY_SERVICE_`.
+
+## Уведомления
+
+Событие пишется в таблицу `notification_outbox` в той же транзакции, что смена талона.
+Откат транзакции убирает и смену статуса, и запись outbox.
+Недоступность шлюза оставляет сообщение в `pending`: вызов клиента уже совершился, доставка уйдёт повторно.
+
+```
+call-next / noshow / approaching
+        │
+        ▼
+  PostgreSQL outbox   ──Celery beat──►  Celery worker
+        │                                    │
+        │                                    ▼
+        │                            NotificationGateway
+        │                                    │
+        └──── статус sent / failed ──────────┘
+```
+
+### События
+
+| Событие | Когда | Что в полезной нагрузке |
 |---|---|---|
-| `admin` | admin | DEMO01 |
-| `op` | operator | DEMO01 |
-| `admin` | admin | DEMO02 |
-| `op` | operator | DEMO02 |
+| `ticket.called` | оператор вызвал талон | номер талона, окно |
+| `queue.approaching` | до клиента осталось не больше `notify_approaching_ahead` человек (по умолчанию 2) | номер, оценка ожидания |
+| `ticket.noshow` | оператор зафиксировал неявку | номер талона, окно |
 
-You can read more about BaseSettings class here: [https://pydantic-docs.helpmanual.io/usage/settings/](https://pydantic-docs.helpmanual.io/usage/settings/)
+Повторная постановка того же события с тем же ключом идемпотентности игнорируется.
+Ключ вызова: `{ticket_id}:ticket.called:{called_at}`.
 
-## Pre-commit
+### Демо-адаптер
 
-To install pre-commit simply run inside the shell:
+`QUERY_SERVICE_NOTIFY_ADAPTER=demo` (значение по умолчанию).
+Успешная доставка пишется в лог строкой `notification.delivered`.
+Телефон клиента в MVP не хранится: демо-контуру получатель не нужен.
+Боевой адаптер возьмёт адрес доставки из профиля клиента Почты.
 
-```bash
-pre-commit install
+Имитация недоступности шлюза:
+
+```env
+QUERY_SERVICE_NOTIFY_FORCE_FAILURE=true
 ```
 
-pre-commit is very useful to check your code before publishing it.
-It's configured using .pre-commit-config.yaml file.
+Очередь при этом работает как обычно.
+Записи outbox копятся в `pending`, затем после лимита попыток переходят в `failed`.
 
-By default it runs:
+### Повторы и таймаут
 
-- mypy (validates types);
-- ruff (spots possible bugs);
+Воркер забирает пачку due-записей с блокировкой строк.
+Отправка ограничена `QUERY_SERVICE_NOTIFY_TIMEOUT_SECONDS` (по умолчанию 2 с).
+Пауза между попытками растёт как `2^attempts` секунд, но не больше 60.
+После `QUERY_SERVICE_NOTIFY_MAX_ATTEMPTS` (по умолчанию 5) запись помечается `failed`.
+Невалидный payload сразу идёт в `failed`: повторять его бессмысленно.
 
-You can read more about pre-commit here: [https://pre-commit.com/](https://pre-commit.com/)
+Beat дергает drain каждые `QUERY_SERVICE_NOTIFY_POLL_INTERVAL_SECONDS` (по умолчанию 2 с).
+Состояние доставки живёт в outbox: следующий тик beat заберёт те же `pending`-строки.
 
-## Migrations
+### Замена демо-адаптера на боевой шлюз
 
-If you want to migrate your database, you should run following commands:
+1. Реализовать протокол `NotificationGateway` (`async def send(message)`) рядом с `integrations/notifications/demo.py`.
+2. При ошибке доставки бросать `NotificationDeliveryError`.
+3. Зарегистрировать реализацию в `create_notification_adapter`.
+4. Выставить `QUERY_SERVICE_NOTIFY_ADAPTER` на новое имя.
 
-```bash
-# To run all migrations until the migration with revision_id.
-alembic upgrade "<revision_id>"
+Меняется адаптер за портом. `call-next`, журнал талона и правила очереди остаются прежними.
+Очередь умеет одно: поставить событие в outbox.
 
-# To perform all pending migrations.
-alembic upgrade "head"
-```
+## Развитие и масштабирование
 
+### Продукт после MVP
 
+- прогноз ожидания с учётом числа открытых окон и длительности услуги;
+- рекомендация руководителю открыть дополнительное окно при росте очереди;
+- киоск на планшете в зале и табло вызова;
+- дашборд нескольких отделений для регионального руководителя;
+- режим доступности для слабовидящих;
+- деактивация сотрудника и перевод между отделениями;
+- таймзона на каждом отделении вместо одной `Europe/Moscow`;
+- боевой адаптер уведомлений и идентификатор получателя в профиле клиента.
 
-### Reverting migrations
+### Масштаб сети: 40 000 отделений
 
-If you want to revert migrations, you should run:
+Очередь изолирована по `department_id`.
+Этот ключ — граница шарда: талоны, окна, слоты, журнал и outbox одного ОПС не пересекаются с соседним.
+API уже не хранит сессии в памяти процесса, горизонтальное масштабирование — реплики FastAPI за прокси.
 
-```bash
-# revert all migrations up to: revision_id.
-alembic downgrade <revision_id>
+Расчёт нагрузки для ориентира, не результат нагрузочного прогона MVP:
 
-# Revert everything.
- alembic downgrade base
-```
+- пик сети смещён по часовым поясам, одновременный максимум заметно ниже «все 40 000 в одну секунду»;
+- одно отделение в пике — единицы окон и десятки талонов в очереди, не миллионы строк;
+- горячие запросы (`call-next`, выдача талона) точечные и уже сериализуются блокировками внутри отделения.
 
+#### Этап 1. Пилот
 
+Несколько десятков ОПС на одном кластере PostgreSQL.
+Боевые уведомления, пробы готовности, метрики вызова и outbox, витрина отделений, киоск в крупных точках.
+Правила приоритета по-прежнему на отделении, значения по умолчанию — в конфигурации сервера.
 
-### Migration generation
+#### Этап 2. Регионы
 
-To generate migrations you should run:
+Шарды PostgreSQL по диапазонам `department_id` или по макрорегиону.
+Маршрутизация API по ключу отделения.
+Аналитика дня считается в шарде, в центр уезжает свёртка (обслужено, ожидание, загрузка), а не сырые талоны.
+Живые обновления очереди (WebSocket или SSE) вместо поллинга.
+Политики приоритета можно задавать с центра и наследовать на отделение.
+Запись из мобильного канала Почты — ещё один адаптер выдачи талона `web`, очередь та же.
 
-```bash
-# For automatic change detection.
-alembic revision --autogenerate
+#### Этап 3. Длинный хвост
 
-# For empty file generation.
-alembic revision
-```
+Отделения с неустойчивой связью получают лёгкий узел: локальная выдача и вызов, синхронизация журнала при появлении канала.
+Каталог ОПС федеративный: центр владеет кодами и адресами, отделение владеет своей очередью.
+При потере связи с центром окно продолжает обслуживать уже выданные талоны; новые QR и запись из сети встают в очередь, когда канал возвращается.
 
-
-
-## Running tests
-
-If you want to run it in docker, simply run:
-
-```bash
-docker compose run --build --rm api pytest -vv .
-docker compose down
-```
-
-For running tests on your local machine.
-
-1. you need to start all aux services.
-
-We can do so by using our `docker-compose.yaml` configuration. It already has everything we need.
-
-```bash
-docker compose up -d --wait db
-```
-
-1. Run tests.
-
-```bash
-pytest -vv .
-```
-
+Уведомления на этом масштабе остаются за outbox: вызов клиента завершается в транзакции отделения, шардированный outbox дренируют независимые воркеры, ключ идемпотентности делает повторную доставку безопасной.
