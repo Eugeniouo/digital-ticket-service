@@ -10,5 +10,7 @@ export const ticketApi = {
       method: "POST",
       body: payload,
     }),
+  incomplete: (departmentId, signal) =>
+    request(`${departmentPath(departmentId)}/tickets/incomplete`, { signal }),
   statusHistory: (ref, signal) => request(`${ticketPath(ref)}/status-history`, { signal }),
 };

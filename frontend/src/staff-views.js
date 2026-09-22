@@ -5,89 +5,85 @@ import {
 } from "./shared/html.js";
 import { ticketSourceLabel } from "./shared/ticket-source.js";
 import { QUEUE_RULE_FIELDS, RULE_MINUTE_MAX, RULE_MINUTE_MIN } from "./staff/queue-rules.js";
+
+const STATUS_LABELS = {
+  queued: "Ожидает",
+  called: "Вызван",
+  serving: "Обслуживается",
+  completed: "Завершён",
+  canceled: "Отменён",
+};
+
 /** Screen templates read current state without changing it. */
 export function createStaffViews(getState) {
   const serviceName = (serviceId) =>
     (getState().services ?? []).find((service) => service.id === serviceId)?.name ?? "";
+  const windowName = (windowId) =>
+    (getState().windows ?? []).find((window) => window.id === windowId)?.label ?? "—";
+  const staffName = (staffId) =>
+    (getState().staffList ?? []).find((staff) => staff.id === staffId)?.display_name ?? "Оператор на окне";
   function queueList() {
-    const {
-      queue,
-      current,
-      opened,
-      closing,
-      enabled,
-      served,
-      problems,
-      rules,
-    } = getState();
+    const { queue } = getState();
     return (
       queue
         .map(
           (q) =>
-            `<div class="queue-item"><div class="row"><strong>${esc(q.ticket_label)}</strong>${pill(ticketSourceLabel(q.source), q.source === "web" ? "blue" : "gray")}</div><p>${esc(serviceName(q.service_id))}</p><div class="row muted"><span>${q.time}</span><span>${q.wait} мин</span></div></div>`,
+            `<div class="queue-item"><div class="row"><strong>${esc(q.ticket_label)}</strong>${pill(ticketSourceLabel(q.source), q.source === "web" ? "blue" : "gray")}</div><p>${esc(serviceName(q.service_id))}</p><div class="row muted"><span>${esc(q.time)}</span><span>${q.wait} мин</span></div></div>`,
         )
         .join("") || '<p class="muted">Ожидающих клиентов нет</p>'
     );
   }
   function table() {
-    const {
-      queue,
-      current,
-      opened,
-      closing,
-      enabled,
-      served,
-      problems,
-      rules,
-    } = getState();
-    return `<div class="table-wrap"><table><thead><tr><th>Талон</th><th>Услуга</th><th>Источник</th><th>Статус</th><th>Ожидание</th><th>Окно</th></tr></thead><tbody>${[...(current ? [current] : []), ...queue].map((q) => `<tr data-action="ticket-history" data-ticket-id="${esc(q.id)}"><td><strong>${esc(q.ticket_label)}</strong></td><td>${esc(serviceName(q.service_id))}</td><td>${pill(ticketSourceLabel(q.source), "blue")}</td><td>${q === current ? (q.started ? "Обслуживается" : "Вызван") : "Ожидает"}</td><td>${q.wait} мин</td><td>${q === current ? "№ 3" : "—"}</td></tr>`).join("")}</tbody></table></div>`;
+    const { queue, current } = getState();
+    const rows = [...(current ? [current] : []), ...queue.filter((ticket) => ticket !== current && ticket?.id !== current?.id)];
+    return `<div class="table-wrap"><table><thead><tr><th>Талон</th><th>Услуга</th><th>Источник</th><th>Статус</th><th>Ожидание</th><th>Окно</th></tr></thead><tbody>${rows.map((q) => `<tr data-action="ticket-history" data-ticket-id="${esc(q.id)}"><td><strong>${esc(q.ticket_label)}</strong></td><td>${esc(serviceName(q.service_id))}</td><td>${pill(ticketSourceLabel(q.source), "blue")}</td><td>${esc(STATUS_LABELS[q.status] || (q.started ? "Обслуживается" : "Ожидает"))}</td><td>${q.wait} мин</td><td>${esc(q.window_id ? windowName(q.window_id) : "—")}</td></tr>`).join("")}</tbody></table></div>`;
   }
   function operator() {
     const {
       queue,
       current,
       opened,
-      closing,
       enabled,
       served,
-      problems,
-      rules,
+      windowLabel = "окно",
+      operatorName = "Оператор",
+      loadError = "",
     } = getState();
-    return `<div class="grid operator"><section class="card"><div class="row"><h2>Очередь</h2>${pill(queue.length, "gray")}</div><p class="muted">Запись по времени, затем ожидающие. Демонстрационный порядок.</p>${queueList()}<div class="section-gap">${btn("+ Добавить клиента", "add", "ghost")}</div></section><section class="card current"><div>${pill(current ? (current.started ? "Обслуживание" : "Клиент вызван") : "Окно № 3", "blue")}</div>${current ? `<div class="number">${esc(current.ticket_label)}</div><h2>${esc(serviceName(current.service_id))}</h2><div class="muted">${esc(ticketSourceLabel(current.source))} · Ожидание ${current.wait} мин</div><p>${current.started ? "Клиент обслуживается в вашем окне" : "Пригласите клиента к окну № 3"}</p><div class="actions">${btn(current.started ? "Завершить обслуживание" : "Начать обслуживание", current.started ? "finish" : "start", "primary")}${!current.started ? btn("Повторить вызов", "repeat", "ghost") : ""}<div class="row">${btn("Вернуть в очередь", "return", "")}${btn("Перенаправить", "redirect", "")}</div>${!current.started ? btn("Клиент не подошёл", "absent", "ghost") : ""}${btn("История", "ticket-history", "ghost")}</div>` : `<div class="empty-icon">↗</div><h2>${opened ? "Готовы к следующему клиенту" : "Окно закрыто"}</h2><p class="muted">${opened ? "Вызовите клиента из очереди.<br>Система учтёт доступные услуги окна." : "Откройте окно и выберите услуги,<br>чтобы начать обслуживание."}</p><div class="actions">${btn(opened ? "Вызвать следующего" : "Открыть окно", opened ? "call" : "open", "primary", (opened && !queue.some((q) => enabled.includes(q.service_id))))}</div>`}${closing ? '<div class="alert">Окно закроется после обслуживания</div>' : ""}</section><section class="card"><h2>Моё окно</h2><p class="muted">${esc(getState().operatorName || "Анна Иванова")} · Оператор</p><div class="status-line">${pill(opened ? "● Открыто" : "Закрыто", opened ? "" : "gray")}</div><h3>Доступные услуги</h3>${enabled.map((s) => `<div class="service">${esc(serviceName(s))}</div>`).join("")}${btn("Изменить услуги", "services", "ghost compact")}<div class="metric">${served}</div><span class="muted">обслужено за смену</span><div class="metric">4 мин</div><span class="muted">среднее обслуживание · демо</span><div class="section-gap">${btn("Сообщить о проблеме", "problem", "ghost")}</div></section></div>`;
+    const error = loadError ? `<div class="alert">${esc(loadError)}</div>` : "";
+    const currentCard = current
+      ? `<div class="number">${esc(current.ticket_label)}</div><h2>${esc(serviceName(current.service_id))}</h2><div class="muted">${esc(ticketSourceLabel(current.source))} · Ожидание ${current.wait} мин</div><p>${current.started ? "Клиент обслуживается в вашем окне" : `Пригласите клиента к ${esc(windowLabel)}`}</p><div class="actions">${btn(current.started ? "Завершить обслуживание" : "Начать обслуживание", current.started ? "finish" : "start", "primary")}<div class="row">${btn("Вернуть в очередь", "return", "")}${btn("Перенаправить", "redirect", "")}</div>${!current.started ? btn("Клиент не подошёл", "absent", "ghost") : ""}${btn("История", "ticket-history", "ghost")}</div>`
+      : `<div class="empty-icon">↗</div><h2>${opened ? "Готовы к следующему клиенту" : "Окно закрыто"}</h2><p class="muted">${opened ? "Вызовите клиента из очереди.<br>Порядок вызова задаёт сервер." : "Откройте окно и выберите услуги,<br>чтобы начать обслуживание."}</p><div class="actions">${btn(opened ? "Вызвать следующего" : "Открыть окно", opened ? "call" : "open", "primary", opened && !queue.length)}</div>`;
+    return `<div class="grid operator">${error}<section class="card"><div class="row"><h2>Очередь</h2>${pill(queue.length, "gray")}</div><p class="muted">Порядок вызова задаёт сервер.</p>${queueList()}<div class="section-gap">${btn("+ Добавить клиента", "add", "ghost")}</div></section><section class="card current"><div>${pill(current ? (current.started ? "Обслуживание" : "Клиент вызван") : windowLabel, "blue")}</div>${currentCard}</section><section class="card"><h2>Моё окно</h2><p class="muted">${esc(operatorName)} · Оператор</p><div class="status-line">${pill(opened ? "● Открыто" : "Закрыто", opened ? "" : "gray")}</div><h3>Доступные услуги</h3>${enabled.map((s) => `<div class="service">${esc(serviceName(s))}</div>`).join("") || '<p class="muted">Услуги появятся после открытия окна</p>'}${btn("Изменить услуги", "services", "ghost compact")}<div class="metric">${served}</div><span class="muted">обслужено за смену</span><div class="section-gap">${btn("Сообщить о проблеме", "problem", "ghost")}</div></section></div>`;
   }
   function windows() {
-    const {
-      queue,
-      current,
-      opened,
-      closing,
-      enabled,
-      served,
-      problems,
-      rules,
-      services = [],
-    } = getState();
-    return `<div class="grid windows">${[1, 2, 3, 4, 5, 6].map((n) => `<div class="card window ${n > 4 ? "closed" : ""}"><div class="row"><h2>Окно № ${n}</h2>${pill(n === 3 ? (opened ? "Открыто" : "Закрыто") : n > 4 ? "Закрыто" : n === 2 ? "Свободно" : "Обслуживание", n > 4 ? "gray" : "blue")}</div><p>${n === 3 ? esc(getState().operatorName || "Анна Иванова") : n > 4 ? "Оператор не назначен" : ["Елена Петрова", "Игорь Волков", "Анна Иванова", "Мария Орлова"][n - 1]}</p><div class="service">${n === 3 ? esc(enabled.map(serviceName).join(", ")) : esc(services[(n - 1) % 3]?.name ?? "")}</div><p class="muted">${n === 3 ? (current ? "Талон " + esc(current.ticket_label) : "Нет активного клиента") : n > 4 ? "Откройте окно при росте очереди" : "Демонстрационные данные"}</p>${btn("Настроить окно", "window-" + n, "ghost compact")}</div>`).join("")}</div>`;
+    const { windows: rows = [], queue = [], current, loadError = "" } = getState();
+    if (loadError) return `<section class="card"><p>${esc(loadError)}</p></section>`;
+    if (!rows.length) return '<section class="card"><p class="muted">Окон в отделении нет</p></section>';
+    const tickets = [...(current ? [current] : []), ...queue];
+    return `<div class="grid windows">${rows.map((window) => {
+      const ticket = tickets.find((item) => item.window_id === window.id && (item.status === "called" || item.status === "serving" || item === current));
+      const open = window.status === "open";
+      const status = !open ? "Закрыто" : ticket ? (ticket.started || ticket.status === "serving" ? "Обслуживание" : "Вызван") : "Открыто";
+      const operator = window.current_operator_id ? staffName(window.current_operator_id) : "Оператор не назначен";
+      const names = (window.open_service_ids?.length ? window.open_service_ids : window.service_ids ?? [])
+        .map(serviceName)
+        .filter(Boolean)
+        .join(", ");
+      return `<div class="card window ${open ? "" : "closed"}"><div class="row"><h2>${esc(window.label)}</h2>${pill(status, open ? "blue" : "gray")}</div><p>${esc(operator)}</p><div class="service">${esc(names)}</div><p class="muted">${ticket ? `Талон ${esc(ticket.ticket_label)}` : open ? "Нет активного клиента" : "Окно закрыто"}</p><button class="ghost compact" data-action="configure-window" data-window-id="${esc(window.id)}">Настроить окно</button></div>`;
+    }).join("")}</div>`;
   }
   function overview() {
-    const {
-      queue,
-      current,
-      opened,
-      closing,
-      enabled,
-      served,
-      problems,
-      rules,
-    } = getState();
+    const { queue, windows: rows = [], issues = [] } = getState();
+    const waits = queue.map((q) => Number(q.wait) || 0);
+    const average = waits.length ? Math.round(waits.reduce((sum, value) => sum + value, 0) / waits.length) : 0;
+    const maximum = waits.length ? Math.max(0, ...waits) : 0;
+    const openCount = rows.filter((window) => window.status === "open").length;
+    const openIssues = issues.filter((issue) => issue.status === "open");
     return `<div class="grid stats">${[
       [queue.length, "Ожидают сейчас"],
-      ["11 мин", "Среднее ожидание · демо"],
-      [
-        Math.max(0, ...queue.map((q) => q.wait)) + " мин",
-        "Максимальное сейчас",
-      ],
-      [served + 105, "Обслужено · демо"],
+      [`${average} мин`, "Среднее ожидание"],
+      [`${maximum} мин`, "Максимальное сейчас"],
+      [`${openCount} из ${rows.length}`, "Открытые окна"],
     ]
       .map(
         ([a, b]) =>
@@ -95,7 +91,7 @@ export function createStaffViews(getState) {
       )
       .join(
         "",
-      )}</div><div class="row"><h2>Работа окон</h2><span class="muted">4 из 6 · демонстрация</span></div>${windows()}<div class="grid two section-gap"><section class="card"><h2>Очередь отделения</h2>${table()}</section><section class="card"><h2>Требует внимания</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Все проблемы →", "problems", "ghost")}</section></div>`;
+      )}</div><div class="row"><h2>Работа окон</h2><span class="muted">${openCount} из ${rows.length}</span></div>${windows()}<div class="grid two section-gap"><section class="card"><h2>Очередь отделения</h2>${table()}</section><section class="card"><h2>Требует внимания</h2>${openIssues.map((issue) => `<div class="alert">${esc(issue.message)}</div>`).join("") || '<p class="muted">Открытых проблем нет</p>'}${btn("Все проблемы →", "problems", "ghost")}</section></div>`;
   }
   function minutesLabel(value) {
     return value == null ? "—" : `${value} мин`;

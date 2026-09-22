@@ -1,4 +1,4 @@
-// Availability is still demonstrational; dates follow the visitor's local day.
+// Calendar days follow the visitor's local day. Slot availability comes from the API.
 export function localDateValue(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
