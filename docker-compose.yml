@@ -52,6 +52,7 @@ services:
     <<: *main_app
     container_name: migrator
     restart: "no"
+    ports: []
     command: sh -c "alembic upgrade head && python -m query_service.bootstrap_staff"
     depends_on:
       db:
@@ -127,10 +128,11 @@ services:
   proxy:
     image: caddy:2-alpine
     container_name: proxy
+    restart: always
     ports:
       - "18080:80"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-}
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

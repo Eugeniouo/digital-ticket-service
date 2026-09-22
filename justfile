@@ -87,6 +87,7 @@ frontend-build:
 [group("deploy")]
 run:
     just env
+    @echo "UI http://localhost:18080  API http://localhost:8000/api/docs"
     docker compose up --build
 
 # vps overlay
@@ -94,6 +95,7 @@ run:
 prod:
     just env
     docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+    @echo "UI http://localhost/  API http://localhost/api/docs"
 
 # generate migrations
 [group("db")]
