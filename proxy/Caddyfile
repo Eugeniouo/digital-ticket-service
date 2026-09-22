@@ -1,4 +1,4 @@
-{$SITE_ADDRESS::80} {
+{$SITE_ADDRESS} {
 	handle /api/* {
 		reverse_proxy api:8000
 	}

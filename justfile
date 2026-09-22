@@ -56,7 +56,7 @@ serve:
 
 # setup Local API: env, DB, Valkey, migrate, bootstrap, serve
 [group("dev")]
-run:
+run-be:
     just env
     just db
     just migrate
@@ -85,8 +85,9 @@ frontend-build:
 
 # full stack: API, frontend, proxy, workers
 [group("deploy")]
-demo:
+run:
     just env
+    @echo "UI http://localhost:18080  API http://localhost:8000/api/docs"
     docker compose up --build
 
 # vps overlay
@@ -94,6 +95,7 @@ demo:
 prod:
     just env
     docker compose -f docker-compose.yml -f docker-compose.vps.yml up -d --build
+    @echo "UI http://localhost/  API http://localhost/api/docs"
 
 # generate migrations
 [group("db")]

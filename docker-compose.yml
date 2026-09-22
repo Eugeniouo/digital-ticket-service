@@ -5,6 +5,7 @@ services:
       dockerfile: backend/Dockerfile
       target: dev
     image: query_service:${QUERY_SERVICE_VERSION:-latest}
+    container_name: api
     restart: always
     ports:
       # Exposes application port.
@@ -30,6 +31,7 @@ services:
 
   db:
     image: postgres:18.3-trixie
+    container_name: db
     hostname: query-service-db
     ports:
       - "5432:5432"
@@ -48,7 +50,9 @@ services:
 
   migrator:
     <<: *main_app
+    container_name: migrator
     restart: "no"
+    ports: []
     command: sh -c "alembic upgrade head && python -m query_service.bootstrap_staff"
     depends_on:
       db:
@@ -56,6 +60,7 @@ services:
 
   valkey:
     image: valkey/valkey:8
+    container_name: valkey
     hostname: query-service-valkey
     ports:
       - "6379:6379"
@@ -68,6 +73,7 @@ services:
 
   celery_worker:
     <<: *main_app
+    container_name: celery-worker
     ports: []
     command: celery -A query_service.celery_app worker -l INFO
     depends_on:
@@ -89,6 +95,7 @@ services:
 
   celery_beat:
     <<: *main_app
+    container_name: celery-beat
     ports: []
     command: celery -A query_service.celery_app beat -l INFO --schedule /tmp/celerybeat-schedule
     depends_on:
@@ -111,6 +118,7 @@ services:
   frontend:
     build:
       context: frontend
+    container_name: frontend
     ports:
       - "18473:4173"
     environment:
@@ -119,10 +127,12 @@ services:
 
   proxy:
     image: caddy:2-alpine
+    container_name: proxy
+    restart: always
     ports:
       - "18080:80"
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:-}
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
     volumes:
       - ./proxy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
