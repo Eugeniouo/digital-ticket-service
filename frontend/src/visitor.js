@@ -1,16 +1,17 @@
 import { request, departmentPath } from './tickets/api.js';
-import { isUuid } from './tickets/storage.js';
-const params = new URLSearchParams(location.search);
-const id = params.get('department') || params.get('branch');
-const caption = document.querySelector('#visitor-branch');
+import { departmentIdFromSearch } from './shared/ids.js';
+import { departmentCaption } from './shared/department.js';
+
+const id = departmentIdFromSearch(location.search);
+const caption = document.querySelector('#visitor-department');
 try {
-  if (!isUuid(id)) throw new Error('Invalid department');
-  const branch = await request(departmentPath(id));
-  if (!branch.is_active) throw new Error('Inactive department');
-  caption.textContent = `Отделение № ${branch.code}: ${branch.address}`;
+  if (!id) throw new Error('Invalid department');
+  const department = await request(departmentPath(id));
+  if (!department.is_active) throw new Error('Inactive department');
+  caption.textContent = departmentCaption(department);
   const join = document.querySelector('#join');
-  join.href = `/?source=qr&branch=${encodeURIComponent(branch.id)}`;
+  join.href = `/?source=qr&department=${encodeURIComponent(department.id)}`;
   join.hidden = false;
 } catch {
-  caption.textContent = 'Не удалось загрузить отделение. Проверьте связь и QR-код: он должен содержать UUID отделения из backend.';
+  caption.textContent = 'Не удалось загрузить отделение. Проверьте связь и QR-код: он должен содержать UUID отделения.';
 }

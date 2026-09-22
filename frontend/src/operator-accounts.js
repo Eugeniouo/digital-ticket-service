@@ -1,6 +1,6 @@
-import { branches } from './mock-data.js';
+import { departments } from './mock-data.js';
 
-const KEY = 'pochta-demo-operators-v2';
+const KEY = 'pochta-demo-operators-v3';
 export function listOperators() {
   return JSON.parse(localStorage.getItem(KEY) || '[]');
 }
@@ -13,7 +13,7 @@ async function digest(password, salt) {
   return Array.from(new Uint8Array(bits)).map(value => value.toString(16).padStart(2, '0')).join('');
 }
 function validateDepartment(department_id) {
-  if (!branches.some(item => item.id === department_id)) throw new Error('Выберите отделение из списка.');
+  if (!departments.some(item => item.id === department_id)) throw new Error('Выберите отделение из списка.');
 }
 async function passwordFields(password) {
   password = password.trim();

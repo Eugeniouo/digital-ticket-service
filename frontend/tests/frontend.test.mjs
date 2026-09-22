@@ -2,14 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { escapeHtml, button, badge } from '../src/shared/html.js';
 import { createStaffViews } from '../src/staff-views.js';
-import { services } from '../src/staff-data.js';
+import { departments, servicesForDepartment } from '../src/mock-data.js';
 import { getDailyReport, dateOffset } from '../src/staff-analytics.js';
+
+const catalog = servicesForDepartment(departments[0].id);
 
 function makeState() {
   return {
     queue: [], current: null, opened: true,
-    closing: false, enabled: services, served: 0, problems: [],
+    closing: false, enabled: catalog.map(service => service.id), served: 0, problems: [],
     rules: [10, 10, 20, 2],
+    services: catalog,
   };
 }
 
@@ -34,7 +37,13 @@ test('operator view follows current state', () => {
   const state = makeState();
   const views = createStaffViews(() => state);
   assert.match(views.operator(), /Готовы к следующему клиенту/);
-  state.current = { id: 'А-001', service: services[0], source: 'QR-код', wait: 5 };
+  state.current = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',
+    ticket_label: 'П-001',
+    service_id: catalog[0].id,
+    source: 'qr',
+    wait: 5,
+  };
   assert.match(views.operator(), /Начать обслуживание/);
   state.current.started = true;
   assert.match(views.operator(), /Завершить обслуживание/);

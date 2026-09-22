@@ -5,14 +5,14 @@ import './shared/assets.js';
 import {
   escapeHtml as esc,
   button as btn,
-  badge as pill,
 } from "./shared/html.js";
-import { services } from "./staff-data.js";
 import { createStaffViews } from "./staff-views.js";
 import { currentOperator } from './operator-accounts.js';
-import { branches } from './mock-data.js';
+import { departments, servicesForDepartment } from './mock-data.js';
+import { formatTicketLabel, ticketLabelPrefix } from './shared/ticket-label.js';
 const signedOperator = currentOperator();
-const operatorBranch = branches.find(branch => branch.id === signedOperator?.department_id) || branches[1];
+const operatorDepartment = departments.find(department => department.id === signedOperator?.department_id);
+const services = servicesForDepartment(operatorDepartment?.id);
 // Demo controller: session state, user actions and dialogs. No server calls.
 let analyticsOffset = 0;
 
@@ -27,43 +27,29 @@ let role =
   current = null,
   closing = false,
   served = 32,
-  serial = 16;
-let queue = [
-  {
-    id: "П-008",
-    service: services[2],
-    source: "web",
-    wait: 3,
-    time: "На 14:30",
-  },
-  {
-    id: "Ж-015",
-    service: services[0],
-    source: "walk-in",
-    wait: 29,
-    time: "Повышен приоритет",
-  },
-  {
-    id: "А-024",
-    service: services[0],
-    source: "qr",
-    wait: 12,
-    time: "В отделении",
-  },
-  {
-    id: "А-025",
-    service: services[1],
-    source: "qr",
-    wait: 8,
-    time: "В отделении",
-  },
-];
+  serial = 26;
+function demoTicket({ label, service, source, wait, time }) {
+  return {
+    id: crypto.randomUUID(),
+    ticket_label: label,
+    service_id: service.id,
+    source,
+    wait,
+    time,
+  };
+}
+let queue = services.length >= 3 ? [
+  demoTicket({ label: "М-008", service: services[2], source: "web", wait: 3, time: "На 14:30" }),
+  demoTicket({ label: "П-015", service: services[0], source: "walk-in", wait: 29, time: "Повышен приоритет" }),
+  demoTicket({ label: "П-024", service: services[0], source: "qr", wait: 12, time: "В отделении" }),
+  demoTicket({ label: "П-025", service: services[1], source: "qr", wait: 8, time: "В отделении" }),
+] : [];
 let problems = [
-    "Ожидание Ж-015 достигло 29 минут",
+    "Ожидание П-015 достигло 29 минут",
     "Нет открытого окна для услуги «Платежи и переводы»",
   ],
-  enabled = [...services.slice(0, 3)];
-const options = () => services.map((s) => `<option>${s}</option>`).join("");
+  enabled = services.slice(0, 3).map((service) => service.id);
+const options = () => services.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
 let notificationTimer;
 function notify(text) {
   clearTimeout(notificationTimer);
@@ -85,6 +71,7 @@ const { queueList, table, operator, windows, overview, analytics, rulesView } =
     served,
     problems,
     rules,
+    services,
   }));
 
 function render() {
@@ -101,7 +88,7 @@ function render() {
           "Аккаунты",
           "QR отделения",
         ];
-  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorBranch.id)}</strong><small>${esc(operatorBranch.address)}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section>`}</main></div>`);
+  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorDepartment?.code ?? "—")}</strong><small>${esc(operatorDepartment?.address ?? "")}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section>`}</main></div>`);
 }
 function dialog(title, body, footer) {
   modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${title}"><div class="row"><h2>${title}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer ${title === "Закрыть окно?" ? "vertical" : ""}">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
@@ -158,20 +145,20 @@ document.addEventListener("click", (e) => {
   }
 
   if (a === "call" && opened && !current) {
-    const i = queue.findIndex((q) => enabled.includes(q.service));
+    const i = queue.findIndex((q) => enabled.includes(q.service_id));
     if (i >= 0) {
       current = queue.splice(i, 1)[0];
-      notify(`Талон ${current.id} вызван к окну № 3`);
+      notify(`Талон ${current.ticket_label} вызван к окну № 3`);
     }
   }
   if (a === "start" && current) {
     current.started = true;
-    notify(`Начато обслуживание ${current.id}`);
+    notify(`Начато обслуживание ${current.ticket_label}`);
   }
-  if (a === "repeat")
-    notify(`Повторный вызов ${current.id} · демонстрационное уведомление`);
+  if (a === "repeat" && current)
+    notify(`Повторный вызов ${current.ticket_label} · демонстрационное уведомление`);
   if (a === "absent" && current && !current.started) {
-    notify(`Талон ${current.id} закрыт: клиент не подошёл`);
+    notify(`Талон ${current.ticket_label} закрыт: клиент не подошёл`);
     current = null;
     if (closing) {
       opened = false;
@@ -179,7 +166,7 @@ document.addEventListener("click", (e) => {
     }
   }
   if (a === "finish" && current) {
-    notify(`Обслуживание ${current.id} завершено`);
+    notify(`Обслуживание ${current.ticket_label} завершено`);
     current = null;
     served++;
     if (closing) {
@@ -217,7 +204,7 @@ document.addEventListener("click", (e) => {
     }
     dialog(
       a === "open" ? "Открытие окна" : "Услуги окна № 3",
-      `<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${services.map((s) => `<label><input type="checkbox" name="services" value="${s}" ${enabled.includes(s) ? "checked" : ""}>${s}</label>`).join("")}</div>`,
+      `<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${services.map((s) => `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${enabled.includes(s.id) ? "checked" : ""}>${esc(s.name)}</label>`).join("")}</div>`,
     );
     return;
   }
@@ -266,27 +253,38 @@ document.addEventListener("click", (e) => {
         notify("Настройки окна № 3 сохранены");
       }
     } else if (pending === "add") {
-      const ticket = {
-        id: "Ж-" + String(serial++).padStart(3, "0"),
-        service: modal.querySelector("#service").value,
+      const service = services.find((item) => item.id === modal.querySelector("#service").value);
+      if (!service) {
+        notify("Выберите услугу");
+        return;
+      }
+      const ticket = demoTicket({
+        label: formatTicketLabel(ticketLabelPrefix(service.name), serial++),
+        service,
         source: "walk-in",
         wait: 0,
         time: "Только что",
-      };
+      });
       queue.push(ticket);
-      notify(`Добавлен талон ${ticket.id}`);
+      notify(`Добавлен талон ${ticket.ticket_label}`);
     } else if (pending === "problem") {
       problems.unshift(reason);
       notify(`Проблема зарегистрирована · ${reason}`);
     } else if (current) {
-      if (pending === "redirect")
-        current.service = modal.querySelector("#service").value;
+      if (pending === "redirect") {
+        const service = services.find((item) => item.id === modal.querySelector("#service").value);
+        if (!service) {
+          notify("Выберите услугу");
+          return;
+        }
+        current.service_id = service.id;
+      }
       current.started = false;
       queue.push(current);
       notify(
         pending === "redirect"
-          ? `${current.id}: перенаправлен · ${reason}`
-          : `${current.id}: возвращён в очередь · ${reason}`,
+          ? `${current.ticket_label}: перенаправлен · ${reason}`
+          : `${current.ticket_label}: возвращён в очередь · ${reason}`,
       );
       current = null;
       if (pending === "close-return" || closing) {

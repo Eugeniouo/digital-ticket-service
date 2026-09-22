@@ -1,4 +1,4 @@
-import { isUuid } from './tickets/storage.js';
+import { departmentIdFromSearch } from './shared/ids.js';
 
 const video = document.querySelector('#camera');
 const status = document.querySelector('#scan-status');
@@ -22,10 +22,10 @@ function stopCamera() {
 function destination(raw) {
   try {
     const url = new URL(raw);
-    const branch = url.searchParams.get('department') || url.searchParams.get('branch');
+    const departmentId = departmentIdFromSearch(url.search);
     // Do not navigate to arbitrary sites, scripts or unrelated QR codes.
-    if (url.origin !== location.origin || url.pathname !== '/src/visitor.html' || !isUuid(branch)) return null;
-    return `/src/visitor.html?branch=${encodeURIComponent(branch)}`;
+    if (url.origin !== location.origin || url.pathname !== '/src/visitor.html' || !departmentId) return null;
+    return `/src/visitor.html?department=${encodeURIComponent(departmentId)}`;
   } catch { return null; }
 }
 

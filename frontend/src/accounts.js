@@ -1,16 +1,25 @@
 import './manager-guard.js';
-import { branches } from './mock-data.js';
+import { departments } from './mock-data.js';
+import { departmentCaption, departmentOptionLabel } from './shared/department.js';
 import { escapeHtml } from './shared/html.js';
 import { listOperators, createOperator, changePassword, currentOperator } from './operator-accounts.js';
 
 const form = document.querySelector('#create-account');
 const message = document.querySelector('#account-message');
 const modal = document.querySelector('#modal');
-const departmentOptions = selected => branches.map(branch => `<option value="${branch.id}" ${branch.id === selected ? 'selected' : ''}>№ ${branch.id} · ${escapeHtml(branch.address)}</option>`).join('');
+const departmentOptions = selected => departments.map(department => `<option value="${escapeHtml(department.id)}" ${department.id === selected ? 'selected' : ''}>${escapeHtml(departmentOptionLabel(department))}</option>`).join('');
 form.elements.department_id.innerHTML = departmentOptions(currentOperator().department_id);
 
+function departmentById(id) {
+  return departments.find(department => department.id === id);
+}
+
 function render() {
-  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== 'admin').map(account => `<article class="queue-item"><h3>${escapeHtml(account.display_name)}</h3><p>${escapeHtml(account.username)} · Отделение № ${escapeHtml(account.department_id)}</p><div class="row"><button data-password="${account.id}">Сменить пароль</button></div></article>`).join('') || '<p class="muted">Операторов пока нет. Создайте первый аккаунт.</p>';
+  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== 'admin').map(account => {
+    const department = departmentById(account.department_id);
+    const place = department ? departmentCaption(department) : 'Отделение не найдено';
+    return `<article class="queue-item"><h3>${escapeHtml(account.display_name)}</h3><p>${escapeHtml(account.username)} · ${escapeHtml(place)}</p><div class="row"><button data-password="${account.id}">Сменить пароль</button></div></article>`;
+  }).join('') || '<p class="muted">Операторов пока нет. Создайте первый аккаунт.</p>';
 }
 form.addEventListener('submit', async event => {
   event.preventDefault();

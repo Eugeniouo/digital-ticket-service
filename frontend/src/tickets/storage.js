@@ -1,6 +1,6 @@
+import { isUuid } from '../shared/ids.js'
+
 export const TICKET_STORAGE_KEY = 'pochta.visitor-ticket.v1'
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-export const isUuid = value => typeof value === 'string' && uuid.test(value)
 
 export function validReference(value) {
   return Boolean(value && isUuid(value.departmentId) && isUuid(value.ticketId))
