@@ -48,3 +48,15 @@ class WindowOccupiedError(Exception):
 
 class OperatorOnDifferentWindowError(Exception):
     """Operator already sits at another window."""
+
+
+class OperatorNotSeatedError(Exception):
+    """Operator is not seated at this window."""
+
+
+class ServicesNotAllowedError(Exception):
+    """Open services must be a non-empty subset of the window catalog."""
+
+
+class OpenServicesWouldBeEmptyError(Exception):
+    """Catalog change would leave an open window with no shift services."""

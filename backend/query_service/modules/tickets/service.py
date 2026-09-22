@@ -164,19 +164,11 @@ class TicketService:
         if not ticket or ticket.department_id != department_id:
             raise TicketNotFoundError
 
-        estimated_wait_minutes = 0
+        estimated_wait_minutes = await self.estimate_wait_minutes(ticket)
 
-        # Compute Estimated Time of Arrival
         rules = await load_queue_rules(self.repository.session, department_id)
         if ticket.status == TicketStatus.QUEUED and is_queue_eligible(ticket.source, ticket.priority_key, rules):
             tickets_ahead = await self.repository.count_tickets_before(ticket)
-
-            service = await self.service_repo.get_by_id(ticket.service_id)
-            avg_service_time = service.duration_time if service else 10
-
-            # maybe we should divide by amount of open windows in parallel? not that critical, requires a lot of changes then
-            estimated_wait_minutes = tickets_ahead * avg_service_time
-
             if tickets_ahead <= settings.notify_approaching_ahead:
                 await self._enqueue_approaching(ticket, estimated_wait_minutes)
 
@@ -184,6 +176,17 @@ class TicketService:
         response_data.estimated_wait_time = estimated_wait_minutes
 
         return response_data
+
+    async def estimate_wait_minutes(self, ticket: Ticket) -> int:
+        """Wait estimate for a queued ticket. Zero if not eligible."""
+        rules = await load_queue_rules(self.repository.session, ticket.department_id)
+        if ticket.status != TicketStatus.QUEUED or not is_queue_eligible(ticket.source, ticket.priority_key, rules):
+            return 0
+
+        service = await self.service_repo.get_by_id(ticket.service_id)
+        duration = service.duration_time if service is not None else 10
+
+        return await self.repository.count_tickets_before(ticket) * duration
 
     async def _enqueue_approaching(self, ticket: Ticket, estimated_wait_time: int) -> None:
         try:

@@ -7,6 +7,7 @@ from uuid import uuid4
 from query_service.database.models.department import Department
 from query_service.database.models.notification_outbox import NotificationOutboxStatus
 from query_service.database.models.service import Service
+from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
 from query_service.integrations.notifications.exceptions import NotificationDeliveryError
@@ -46,7 +47,7 @@ def _make_windows_service(dbsession: AsyncSession) -> WindowsService:
     )
 
 
-async def _seed_queue(dbsession: AsyncSession) -> tuple[Department, Service, Window, Ticket]:
+async def _seed_queue(dbsession: AsyncSession) -> tuple[Department, Service, Window, Ticket, Staff]:
     department = Department(
         address="Test address",
         open_time=time(8, 0),
@@ -65,13 +66,27 @@ async def _seed_queue(dbsession: AsyncSession) -> tuple[Department, Service, Win
     dbsession.add(service)
     await dbsession.flush()
 
+    operator = Staff(
+        username=f"op-{uuid4()}",
+        display_name="Operator",
+        password_hash="hash",
+        role=StaffRole.OPERATOR,
+        department_id=department.id,
+    )
+    dbsession.add(operator)
+    await dbsession.flush()
+
     window = Window(
         department_id=department.id,
         label=f"Window {uuid4()}",
         status=WindowStatus.OPEN,
+        current_operator_id=operator.id,
         services=[service],
     )
     dbsession.add(window)
+    await dbsession.flush()
+    await dbsession.refresh(window, attribute_names=["open_services"])
+    window.open_services = [service]
     await dbsession.flush()
 
     ticket = Ticket(
@@ -86,14 +101,14 @@ async def _seed_queue(dbsession: AsyncSession) -> tuple[Department, Service, Win
     dbsession.add(ticket)
     await dbsession.flush()
 
-    return department, service, window, ticket
+    return department, service, window, ticket, operator
 
 
 async def test_call_next_keeps_ticket_when_adapter_fails(dbsession: AsyncSession) -> None:
-    department, _service, window, ticket = await _seed_queue(dbsession)
+    department, _service, window, ticket, operator = await _seed_queue(dbsession)
     service = _make_windows_service(dbsession)
 
-    selected = await service.call_next(department.id, window.id)
+    selected = await service.call_next(department.id, window.id, operator.id)
 
     assert selected.id == ticket.id
     assert selected.status == TicketStatus.CALLED
@@ -114,7 +129,7 @@ async def test_call_next_keeps_ticket_when_adapter_fails(dbsession: AsyncSession
 
 
 async def test_enqueue_approaching_is_idempotent(dbsession: AsyncSession) -> None:
-    _department, _service, _window, ticket = await _seed_queue(dbsession)
+    _department, _service, _window, ticket, _operator = await _seed_queue(dbsession)
     notifications = NotificationService(
         repository=NotificationRepository(dbsession),
         tickets=TicketRepository(dbsession),

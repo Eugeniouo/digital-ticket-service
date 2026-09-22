@@ -15,9 +15,12 @@ from query_service.modules.windows.exceptions import (
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasNoServicesError,
+    WindowNotFoundError,
 )
 from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.service import WindowsService
+
+OPERATOR_ID = uuid4()
 
 
 @pytest.fixture
@@ -59,7 +62,10 @@ def open_window() -> Window:
             services=[
                 SimpleNamespace(id=service_id),
             ],
-            current_operator_id=None,
+            open_services=[
+                SimpleNamespace(id=service_id),
+            ],
+            current_operator_id=OPERATOR_ID,
         ),
     )
 
@@ -74,8 +80,8 @@ async def test_call_next_raises_when_window_disappeared_after_lock(
     repository.get_in_department.return_value = open_window
     repository.lock_window.return_value = None
 
-    with pytest.raises(EmptyQueueError):
-        await svc.call_next(open_window.department_id, open_window.id)
+    with pytest.raises(WindowNotFoundError):
+        await svc.call_next(open_window.department_id, open_window.id, OPERATOR_ID)
 
     tickets.expire_web_noshows.assert_awaited_once()
     repository.save.assert_not_awaited()
@@ -96,11 +102,13 @@ async def test_call_next_rechecks_window_status_after_lock(
             department_id=open_window.department_id,
             status=WindowStatus.CLOSED,
             services=open_window.services,
+            open_services=open_window.open_services,
+            current_operator_id=OPERATOR_ID,
         ),
     )
 
     with pytest.raises(WindowClosedError):
-        await svc.call_next(open_window.department_id, open_window.id)
+        await svc.call_next(open_window.department_id, open_window.id, OPERATOR_ID)
 
     repository.save.assert_not_awaited()
 
@@ -117,7 +125,7 @@ async def test_call_next_rejects_active_ticket(
     repository.ticket_exists_for_window.return_value = True
 
     with pytest.raises(TicketAlreadyInProgressError):
-        await svc.call_next(open_window.department_id, open_window.id)
+        await svc.call_next(open_window.department_id, open_window.id, OPERATOR_ID)
 
     repository.save.assert_not_awaited()
 
@@ -136,6 +144,8 @@ async def test_call_next_rejects_window_without_services(
             department_id=open_window.department_id,
             status=WindowStatus.OPEN,
             services=[],
+            open_services=[],
+            current_operator_id=OPERATOR_ID,
         ),
     )
 
@@ -143,7 +153,7 @@ async def test_call_next_rejects_window_without_services(
     repository.lock_window.return_value = empty_window
 
     with pytest.raises(WindowHasNoServicesError):
-        await svc.call_next(empty_window.department_id, empty_window.id)
+        await svc.call_next(empty_window.department_id, empty_window.id, OPERATOR_ID)
 
     repository.save.assert_not_awaited()
 
@@ -160,7 +170,7 @@ async def test_call_next_raises_when_no_matching_ticket_exists(
     repository.find_next_eligible_ticket.return_value = None
 
     with pytest.raises(EmptyQueueError):
-        await svc.call_next(open_window.department_id, open_window.id)
+        await svc.call_next(open_window.department_id, open_window.id, OPERATOR_ID)
 
     repository.save.assert_not_awaited()
 
@@ -186,7 +196,7 @@ async def test_call_next_marks_selected_ticket_as_called(
     repository.lock_window.return_value = open_window
     repository.find_next_eligible_ticket.return_value = ticket
 
-    result = await svc.call_next(open_window.department_id, open_window.id)
+    result = await svc.call_next(open_window.department_id, open_window.id, OPERATOR_ID)
 
     assert result is ticket
     assert ticket.status == TicketStatus.CALLED

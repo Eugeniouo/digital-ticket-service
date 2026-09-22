@@ -12,8 +12,11 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoCalledTicketError,
     NoTicketInProgressError,
+    OpenServicesWouldBeEmptyError,
+    OperatorNotSeatedError,
     OperatorOnDifferentWindowError,
     ServiceNotInDepartmentError,
+    ServicesNotAllowedError,
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasActiveTicketError,
@@ -24,12 +27,28 @@ from query_service.modules.windows.exceptions import (
 from query_service.modules.windows.schema import (
     WindowCreateRequestDTO,
     WindowDTO,
+    WindowOpenRequestDTO,
+    WindowQueueResponse,
     WindowRedirectRequestDTO,
     WindowUpdateRequestDTO,
 )
 from query_service.modules.windows.service import WindowsService
 
 router = APIRouter()
+
+
+def _window_not_found(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Window not found in this department",
+    )
+
+
+def _not_seated(exc: Exception) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Operator is not seated at this window",
+    )
 
 
 @router.get("", response_model=list[WindowDTO], responses={404: {"description": "Department not found"}})
@@ -85,7 +104,8 @@ async def create_window(
     response_model=WindowDTO,
     responses={
         404: {"description": "Window not found in this department"},
-        409: {"description": "Window has an active ticket, is occupied, or operator already sits elsewhere"},
+        400: {"description": "Service not available in this department"},
+        409: {"description": "Window label already exists, or catalog change would empty an open shift"},
     },
 )
 async def update_window(
@@ -93,16 +113,13 @@ async def update_window(
     window_id: UUID,
     payload: WindowUpdateRequestDTO,
     svc: WindowsService = Depends(),
-    staff: Staff = Depends(require_operator),
+    _staff: Staff = Depends(require_admin),
 ) -> WindowDTO:
     try:
-        return await svc.update_window(department_id, window_id, payload, operator_id=staff.id)
+        return await svc.update_window(department_id, window_id, payload)
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
 
     except ServiceNotInDepartmentError as exc:
         raise HTTPException(
@@ -110,10 +127,45 @@ async def update_window(
             detail="Service not available in this department",
         ) from exc
 
-    except WindowHasActiveTicketError as exc:
+    except DuplicateWindowLabelError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Window has an active ticket and cannot be closed",
+            detail="Window label already exists in this department",
+        ) from exc
+
+    except OpenServicesWouldBeEmptyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Catalog change would leave the open window with no services",
+        ) from exc
+
+
+@router.post(
+    "/{window_id}:open",
+    response_model=WindowDTO,
+    responses={
+        404: {"description": "Window not found in this department"},
+        400: {"description": "Open services must be a non-empty subset of the window catalog"},
+        409: {"description": "Window is occupied or operator already sits elsewhere"},
+    },
+)
+async def open_window(
+    department_id: UUID,
+    window_id: UUID,
+    payload: WindowOpenRequestDTO,
+    svc: WindowsService = Depends(),
+    staff: Staff = Depends(require_operator),
+) -> WindowDTO:
+    try:
+        return await svc.open_window(department_id, window_id, payload, operator_id=staff.id)
+
+    except WindowNotFoundError as exc:
+        raise _window_not_found(exc) from exc
+
+    except ServicesNotAllowedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Open services must be a non-empty subset of the window catalog",
         ) from exc
 
     except WindowOccupiedError as exc:
@@ -130,9 +182,65 @@ async def update_window(
 
 
 @router.post(
+    "/{window_id}:close",
+    response_model=WindowDTO,
+    responses={
+        403: {"description": "Operator is not seated at this window"},
+        404: {"description": "Window not found in this department"},
+        409: {"description": "Window has an active ticket and cannot be closed"},
+    },
+)
+async def close_window(
+    department_id: UUID,
+    window_id: UUID,
+    svc: WindowsService = Depends(),
+    staff: Staff = Depends(require_operator),
+) -> WindowDTO:
+    try:
+        return await svc.close_window(department_id, window_id, operator_id=staff.id)
+
+    except WindowNotFoundError as exc:
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
+
+    except WindowHasActiveTicketError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Window has an active ticket and cannot be closed",
+        ) from exc
+
+
+@router.get(
+    "/{window_id}/queue",
+    response_model=WindowQueueResponse,
+    responses={
+        403: {"description": "Operator is not seated at this window"},
+        404: {"description": "Window not found in this department"},
+    },
+)
+async def get_window_queue(
+    department_id: UUID,
+    window_id: UUID,
+    svc: WindowsService = Depends(),
+    staff: Staff = Depends(require_operator),
+) -> WindowQueueResponse:
+    try:
+        return await svc.get_queue(department_id, window_id, operator_id=staff.id)
+
+    except WindowNotFoundError as exc:
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
+
+
+@router.post(
     "/{window_id}:call-next",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         409: {
             "description": "Window is closed, a ticket is already in progress, or the matching queue is empty.",
@@ -143,16 +251,16 @@ async def call_next(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.call_next(department_id, window_id))
+        return TicketResponse.model_validate(await svc.call_next(department_id, window_id, operator_id=staff.id))
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except WindowClosedError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Window is closed") from exc
@@ -180,6 +288,7 @@ async def call_next(
     "/{window_id}:start",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         409: {"description": "No called ticket at this window to start serving"},
     },
@@ -188,16 +297,16 @@ async def start(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.start(department_id, window_id))
+        return TicketResponse.model_validate(await svc.start(department_id, window_id, operator_id=staff.id))
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except NoCalledTicketError as exc:
         raise HTTPException(
@@ -210,6 +319,7 @@ async def start(
     "/{window_id}:noshow",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         409: {"description": "No called ticket at this window to mark as no-show"},
     },
@@ -218,16 +328,16 @@ async def mark_no_show(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.mark_no_show(department_id, window_id))
+        return TicketResponse.model_validate(await svc.mark_no_show(department_id, window_id, operator_id=staff.id))
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except NoCalledTicketError as exc:
         raise HTTPException(
@@ -240,6 +350,7 @@ async def mark_no_show(
     "/{window_id}:complete",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         409: {"description": "No ticket in progress at this window"},
     },
@@ -248,16 +359,16 @@ async def complete(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.complete(department_id, window_id))
+        return TicketResponse.model_validate(await svc.complete(department_id, window_id, operator_id=staff.id))
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except NoTicketInProgressError as exc:
         raise HTTPException(
@@ -270,6 +381,7 @@ async def complete(
     "/{window_id}:requeue",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         409: {"description": "No ticket in progress at this window"},
     },
@@ -278,16 +390,16 @@ async def requeue(
     department_id: UUID,
     window_id: UUID,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.requeue(department_id, window_id))
+        return TicketResponse.model_validate(await svc.requeue(department_id, window_id, operator_id=staff.id))
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except (NoTicketInProgressError, InvalidTicketStateError) as exc:
         raise HTTPException(
@@ -300,6 +412,7 @@ async def requeue(
     "/{window_id}:redirect",
     response_model=TicketResponse,
     responses={
+        403: {"description": "Operator is not seated at this window"},
         404: {"description": "Window not found in this department"},
         400: {"description": "Service not in department or inactive"},
         409: {"description": "No ticket in progress at this window"},
@@ -310,16 +423,18 @@ async def redirect(
     window_id: UUID,
     payload: WindowRedirectRequestDTO,
     svc: WindowsService = Depends(),
-    _staff: Staff = Depends(require_operator),
+    staff: Staff = Depends(require_operator),
 ) -> TicketResponse:
     try:
-        return TicketResponse.model_validate(await svc.redirect(department_id, window_id, payload))
+        return TicketResponse.model_validate(
+            await svc.redirect(department_id, window_id, payload, operator_id=staff.id),
+        )
 
     except WindowNotFoundError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Window not found in this department",
-        ) from exc
+        raise _window_not_found(exc) from exc
+
+    except OperatorNotSeatedError as exc:
+        raise _not_seated(exc) from exc
 
     except ServiceNotInDepartmentError as exc:
         raise HTTPException(

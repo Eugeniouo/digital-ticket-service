@@ -8,6 +8,7 @@ import pytest
 from query_service.database.models.department import Department
 from query_service.database.models.service import Service
 from query_service.database.models.slot import Slot
+from query_service.database.models.staff import Staff, StaffRole
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.window import Window, WindowStatus
 from query_service.modules.notifications.repository import NotificationRepository
@@ -53,6 +54,7 @@ class QueueContext:
     other_service: Service
     window: Window
     other_window: Window
+    operator: Staff
 
 
 @pytest.fixture
@@ -91,10 +93,21 @@ async def queue_context(dbsession: AsyncSession) -> QueueContext:
     dbsession.add_all([service, other_service])
     await dbsession.flush()
 
+    operator = Staff(
+        username=f"op-{uuid4()}",
+        display_name="Operator",
+        password_hash="hash",
+        role=StaffRole.OPERATOR,
+        department_id=department.id,
+    )
+    dbsession.add(operator)
+    await dbsession.flush()
+
     window = Window(
         department_id=department.id,
         label=f"Window {uuid4()}",
         status=WindowStatus.OPEN,
+        current_operator_id=operator.id,
         services=[service],
     )
 
@@ -107,6 +120,11 @@ async def queue_context(dbsession: AsyncSession) -> QueueContext:
 
     dbsession.add_all([window, other_window])
     await dbsession.flush()
+    await dbsession.refresh(window, attribute_names=["open_services"])
+    await dbsession.refresh(other_window, attribute_names=["open_services"])
+    window.open_services = [service]
+    other_window.open_services = [service]
+    await dbsession.flush()
 
     return QueueContext(
         department=department,
@@ -115,6 +133,7 @@ async def queue_context(dbsession: AsyncSession) -> QueueContext:
         other_service=other_service,
         window=window,
         other_window=other_window,
+        operator=operator,
     )
 
 
@@ -173,7 +192,7 @@ async def test_assign_next_ticket_chooses_lowest_priority_key(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.ticket_label == "better-priority"
@@ -219,7 +238,7 @@ async def test_assign_next_ticket_uses_created_at_as_tie_breaker(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == older.id
@@ -251,7 +270,7 @@ async def test_assign_next_ticket_accepts_live_ticket_sources(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == ticket.id
@@ -288,7 +307,7 @@ async def test_assign_next_ticket_ignores_wrong_service(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == correct_service.id
@@ -328,7 +347,7 @@ async def test_assign_next_ticket_ignores_other_department(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == correct_department.id
@@ -382,7 +401,7 @@ async def test_assign_next_ticket_ignores_ticket_for_another_window_slot(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == no_slot.id
@@ -426,7 +445,7 @@ async def test_assign_next_ticket_ignores_non_queued_ticket(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == queued.id
@@ -458,7 +477,7 @@ async def test_assign_next_ticket_accepts_due_web_ticket(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == ticket.id
@@ -490,7 +509,7 @@ async def test_assign_next_ticket_rejects_web_noshow(
     service = make_windows_service(dbsession)
 
     with pytest.raises(EmptyQueueError):
-        await service.call_next(queue_context.department.id, queue_context.window.id)
+        await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert ticket.status == TicketStatus.CANCELED
 
@@ -537,7 +556,7 @@ async def test_assign_next_ticket_returns_none_when_no_eligible_tickets(
     service = make_windows_service(dbsession)
 
     with pytest.raises(EmptyQueueError):
-        await service.call_next(queue_context.department.id, queue_context.window.id)
+        await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert wrong_service.status == TicketStatus.QUEUED
     assert expired_web.status == TicketStatus.CANCELED
@@ -573,13 +592,13 @@ async def test_assign_next_ticket_rejects_second_call_while_ticket_is_active(
 
     service = make_windows_service(dbsession)
 
-    selected = await service.call_next(queue_context.department.id, queue_context.window.id)
+    selected = await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert selected is not None
     assert selected.id == first.id
 
     with pytest.raises(TicketAlreadyInProgressError):
-        await service.call_next(queue_context.department.id, queue_context.window.id)
+        await service.call_next(queue_context.department.id, queue_context.window.id, queue_context.operator.id)
 
     assert first.status == TicketStatus.CALLED
     assert second.status == TicketStatus.QUEUED
