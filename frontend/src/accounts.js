@@ -1,21 +1,24 @@
 import './manager-guard.js';
 import { departments } from './mock-data.js';
-import { departmentCaption, departmentOptionLabel } from './shared/department.js';
+import { departmentCaption } from './shared/department.js';
 import { escapeHtml } from './shared/html.js';
 import { listOperators, createOperator, changePassword, currentOperator } from './operator-accounts.js';
 
 const form = document.querySelector('#create-account');
 const message = document.querySelector('#account-message');
 const modal = document.querySelector('#modal');
-const departmentOptions = selected => departments.map(department => `<option value="${escapeHtml(department.id)}" ${department.id === selected ? 'selected' : ''}>${escapeHtml(departmentOptionLabel(department))}</option>`).join('');
-form.elements.department_id.innerHTML = departmentOptions(currentOperator().department_id);
+const manager = currentOperator();
+const managerDepartment = departments.find(department => department.id === manager.department_id);
+document.querySelector('#account-department').textContent = managerDepartment
+  ? departmentCaption(managerDepartment)
+  : 'Отделение не найдено';
 
 function departmentById(id) {
   return departments.find(department => department.id === id);
 }
 
 function render() {
-  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== 'admin').map(account => {
+  document.querySelector('#accounts').innerHTML = listOperators().filter(account => account.role !== 'admin' && account.department_id === manager.department_id).map(account => {
     const department = departmentById(account.department_id);
     const place = department ? departmentCaption(department) : 'Отделение не найдено';
     return `<article class="queue-item"><h3>${escapeHtml(account.display_name)}</h3><p>${escapeHtml(account.username)} · ${escapeHtml(place)}</p><div class="row"><button data-password="${account.id}">Сменить пароль</button></div></article>`;
@@ -30,7 +33,7 @@ form.addEventListener('submit', async event => {
       username: form.elements.username.value,
       display_name: form.elements.display_name.value,
       password: form.elements.password.value,
-      department_id: form.elements.department_id.value,
+      department_id: manager.department_id,
     });
     form.reset(); render(); message.textContent = 'Оператор создан. Теперь можно войти с его логином и паролем.';
   } catch (error) { message.textContent = error.message; }
