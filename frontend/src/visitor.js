@@ -1,12 +1,16 @@
-import { branches } from './mock-data.js';
-const id = new URLSearchParams(location.search).get('branch');
-const branch = branches.find(item => item.id === id);
+import { request, departmentPath } from './tickets/api.js';
+import { isUuid } from './tickets/storage.js';
+const params = new URLSearchParams(location.search);
+const id = params.get('department') || params.get('branch');
 const caption = document.querySelector('#visitor-branch');
-if (!branch) {
-  caption.textContent = 'Отделение не найдено. Отсканируйте QR-код на плакате ещё раз или обратитесь к сотруднику.';
-} else {
-  caption.textContent = `Отделение № ${branch.id}: ${branch.address}`;
+try {
+  if (!isUuid(id)) throw new Error('Invalid department');
+  const branch = await request(departmentPath(id));
+  if (!branch.is_active) throw new Error('Inactive department');
+  caption.textContent = `Отделение № ${branch.code}: ${branch.address}`;
   const join = document.querySelector('#join');
   join.href = `/?source=qr&branch=${encodeURIComponent(branch.id)}`;
   join.hidden = false;
+} catch {
+  caption.textContent = 'Не удалось загрузить отделение. Проверьте связь и QR-код: он должен содержать UUID отделения из backend.';
 }
