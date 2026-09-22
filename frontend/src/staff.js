@@ -10,10 +10,13 @@ import { createStaffViews } from "./staff-views.js";
 import { currentOperator } from './operator-accounts.js';
 import { departments, servicesForDepartment } from './mock-data.js';
 import { formatTicketLabel, ticketLabelPrefix } from './shared/ticket-label.js';
+import { ticketApi } from './tickets/api.js';
+import { demoHistoryEvents, historyTimelineHtml } from './staff-ticket-history.js';
+import { isUuid } from './shared/ids.js';
 const signedOperator = currentOperator();
 const operatorDepartment = departments.find(department => department.id === signedOperator?.department_id);
 const services = servicesForDepartment(operatorDepartment?.id);
-// Demo controller: session state, user actions and dialogs. No server calls.
+// Demo controller: session state, user actions and dialogs.
 let analyticsOffset = 0;
 
 const root = document.querySelector("#staff");
@@ -94,9 +97,63 @@ function dialog(title, body, footer) {
   modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${title}"><div class="row"><h2>${title}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer ${title === "Закрыть окно?" ? "vertical" : ""}">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
   modal.querySelector("input,select,textarea,button")?.focus();
 }
+let historyRequest = 0;
+function findTicket(ticketId) {
+  if (ticketId) {
+    return [current, ...queue].find((ticket) => ticket?.id === ticketId) || null;
+  }
+
+  return current;
+}
+async function openTicketHistory(ticket) {
+  const title = `История ${ticket.ticket_label}`;
+  const requestId = ++historyRequest;
+  const panel = '<div id="ticket-history-panel"><p class="muted">Загружаем…</p></div>';
+
+  dialog(title, panel, btn("Закрыть", "dismiss", "primary"));
+
+  const isCurrent = ticket === current;
+  const departmentId = operatorDepartment?.id;
+  let events = null;
+  let demo = true;
+
+  if (isUuid(departmentId) && isUuid(ticket.id)) {
+    try {
+      const rows = await ticketApi.statusHistory({
+        departmentId,
+        ticketId: ticket.id,
+      });
+
+      if (Array.isArray(rows)) {
+        events = [...rows].reverse();
+        demo = false;
+      }
+    } catch {
+      events = null;
+    }
+  }
+
+  if (demo || !events) {
+    events = demoHistoryEvents(ticket, {
+      isCurrent,
+      windowLabel: isCurrent ? "№ 3" : null,
+    });
+    demo = true;
+  }
+
+  if (requestId !== historyRequest) return;
+
+  const host = modal.querySelector("#ticket-history-panel");
+  if (!host) return;
+
+  host.innerHTML = historyTimelineHtml(events, { demo });
+}
 let pending = "";
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") modal.innerHTML = "";
+  if (e.key === "Escape") {
+    historyRequest++;
+    modal.innerHTML = "";
+  }
   if (e.key === "Tab" && modal.firstChild) {
     const els = [...modal.querySelectorAll("button,input,select,textarea")];
     if (e.shiftKey && document.activeElement === els[0]) {
@@ -109,7 +166,8 @@ document.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("click", (e) => {
-  const a = e.target.closest("[data-action]")?.dataset.action;
+  const trigger = e.target.closest("[data-action]");
+  const a = trigger?.dataset.action;
   if (!a) return;
   if (a === 'open-report-calendar') {
     const input = document.querySelector('#analytics-date');
@@ -127,6 +185,7 @@ document.addEventListener("click", (e) => {
     return;
   }
   if (a === "dismiss") {
+    historyRequest++;
     modal.innerHTML = "";
     return;
   }
@@ -141,6 +200,16 @@ document.addEventListener("click", (e) => {
   if (a === "problems") {
     page = "Проблемы и журнал";
     render();
+    return;
+  }
+
+  if (a === "ticket-history") {
+    const ticket = findTicket(trigger.dataset.ticketId);
+    if (!ticket) {
+      notify("Талон не найден");
+      return;
+    }
+    openTicketHistory(ticket);
     return;
   }
 

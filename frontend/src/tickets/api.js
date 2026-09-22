@@ -38,4 +38,5 @@ export const ticketApi = {
   create: (departmentId, payload) => request(`${departmentPath(departmentId)}/tickets`, {
     method: 'POST', body: payload,
   }),
+  statusHistory: (ref, signal) => request(`${ticketPath(ref)}/status-history`, { signal }),
 }

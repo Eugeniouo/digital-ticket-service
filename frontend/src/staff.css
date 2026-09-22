@@ -287,6 +287,35 @@ td {
 tbody tr:hover {
   background: #f8f9ff;
 }
+tbody tr[data-action] {
+  cursor: pointer;
+}
+.ticket-history {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid #eef0ff;
+}
+.ticket-history li {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 16px 16px;
+  position: relative;
+}
+.ticket-history li::before {
+  content: "";
+  position: absolute;
+  left: -17px;
+  top: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+.ticket-history time {
+  font-size: 12px;
+  color: var(--muted);
+}
 .alert {
   padding: 15px;
   background: #fff7ed;
