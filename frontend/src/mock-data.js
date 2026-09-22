@@ -1,12 +1,47 @@
 import { localDateValue } from './calendar.js'
 
-// Demo data only. Replace this module with the API adapter when the backend is ready.
-export const branches = [
-  { id: '369000', address: 'г. Черкесск, ул. Первомайская, зд. 30.' },
-  { id: '369001', address: 'г. Черкесск, пр-кт Ленина, зд. 152' },
+// Demo catalog in API DTO shape. Replace with GET /api/departments and nested services.
+export const departments = [
+  {
+    id: 'a3690000-0000-4000-8000-000000000000',
+    code: '369000',
+    address: 'г. Черкесск, ул. Первомайская, зд. 30.',
+    open_time: '09:00:00',
+    close_time: '18:00:00',
+    is_active: true,
+  },
+  {
+    id: 'a3690001-0000-4000-8000-000000000000',
+    code: '369001',
+    address: 'г. Черкесск, пр-кт Ленина, зд. 152',
+    open_time: '09:00:00',
+    close_time: '18:00:00',
+    is_active: true,
+  },
 ]
 
-export const mockTicket = { number: '№А-037', waitMinutes: 12 }
+const SERVICE_SPECS = [
+  { name: 'Получение посылки', duration_time: 10 },
+  { name: 'Отправка посылки', duration_time: 10 },
+  { name: 'Заказные письма', duration_time: 10 },
+  { name: 'Платежи и переводы', duration_time: 10 },
+  { name: 'Пенсия и пособия', duration_time: 15 },
+  { name: 'Прочие услуги', duration_time: 10 },
+]
+
+export const services = departments.flatMap((department, departmentIndex) =>
+  SERVICE_SPECS.map((spec, serviceIndex) => ({
+    id: `a369000${departmentIndex}-0001-4000-8000-${String(serviceIndex + 1).padStart(12, '0')}`,
+    department_id: department.id,
+    name: spec.name,
+    duration_time: spec.duration_time,
+    is_active: true,
+  })),
+)
+
+export function servicesForDepartment(departmentId) {
+  return services.filter(service => service.department_id === departmentId)
+}
 
 function createTimes(startHour, endHour) {
   return Array.from({ length: (endHour - startHour) * 6 }, (_, index) => {

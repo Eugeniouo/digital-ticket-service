@@ -1,6 +1,7 @@
 import { signIn } from './demo-session.js';
 import { authenticate, initializeManager, listOperators } from './operator-accounts.js';
-import { branches } from './mock-data.js';
+import { departments } from './mock-data.js';
+import { departmentOptionLabel } from './shared/department.js';
 
 const form = document.querySelector('#login-form');
 const error = document.querySelector('#login-error');
@@ -14,10 +15,10 @@ if (setup) {
   label.htmlFor = name.id; label.textContent = 'Имя руководителя';
   const select = document.createElement('select');
   select.id = 'setup-department'; select.name = 'department_id';
-  for (const branch of branches) select.add(new Option('№ ' + branch.id + ' · ' + branch.address, branch.id));
-  const branchLabel = document.createElement('label');
-  branchLabel.htmlFor = select.id; branchLabel.textContent = 'Отделение';
-  form.prepend(label, name, branchLabel, select);
+  for (const department of departments) select.add(new Option(departmentOptionLabel(department), department.id));
+  const departmentLabel = document.createElement('label');
+  departmentLabel.htmlFor = select.id; departmentLabel.textContent = 'Отделение';
+  form.prepend(label, name, departmentLabel, select);
   form.elements.password.minLength = 8;
   form.elements.password.maxLength = 128;
   form.elements.password.autocomplete = 'new-password';

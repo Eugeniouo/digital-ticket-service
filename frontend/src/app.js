@@ -1,12 +1,13 @@
 import { renderHtml } from './shared/render.js'
 import './shared/assets.js'
 import { escapeHtml } from './shared/html.js'
+import { departmentIdFromSearch } from './shared/ids.js'
 import { request, departmentPath, ticketApi } from './tickets/api.js'
 import { createTicketStorage, referenceFromTicket } from './tickets/storage.js'
 import { INITIAL_DATE, INITIAL_MONTH, formatDate, formatMonth, getMonthDays, getMonthOffset, shiftMonth } from './calendar.js'
 
 const root = document.querySelector('#root')
-let branches = []
+let departments = []
 let services = []
 let slots = []
 let busy = false
@@ -17,9 +18,9 @@ const ticketStorage = createTicketStorage()
 const state = {
   booking: window.location.pathname.startsWith('/booking'),
   step: window.location.pathname.startsWith('/booking') ? 'place' : 'service',
-  service: null,
+  serviceId: null,
   query: '',
-  branch: new URLSearchParams(location.search).get('branch'),
+  departmentId: departmentIdFromSearch(location.search),
   date: INITIAL_DATE,
   month: INITIAL_MONTH,
   time: null,
@@ -28,9 +29,9 @@ const state = {
 
 const logo = (compact = false) => `<img class="logo${compact ? ' logo--compact' : ''}" src="/assets/logo.svg" alt="Почта России" decoding="sync" fetchpriority="high">`
 const button = (label, action, disabled = false) => `<footer class="screen-footer"><button class="primary-button" data-action="${action}" ${disabled ? 'disabled' : ''}>${label}</button></footer>`
-const currentBranch = () => branches.find(branch => branch.id === state.branch)
-const branchText = () => currentBranch()
-  ? `<strong>Отделение № ${escapeHtml(currentBranch().code)}</strong>: ${escapeHtml(currentBranch().address)}` : ''
+const currentDepartment = () => departments.find(department => department.id === state.departmentId)
+const departmentText = () => currentDepartment()
+  ? `<strong>Отделение № ${escapeHtml(currentDepartment().code)}</strong>: ${escapeHtml(currentDepartment().address)}` : ''
 
 function getTimeGroups() {
   const times = [...new Set(slots.map(slot => slot.slot_time.slice(0, 5)))].sort()
@@ -41,21 +42,19 @@ function getTimeGroups() {
 }
 
 async function loadServices() {
-  const values = await request(`${departmentPath(state.branch)}/services/active`)
-  // API has no icon field. Do not assign misleading icons based on array order.
-  services = values.map(service => [service.id, service.name, '/assets/services.svg'])
+  services = await request(`${departmentPath(state.departmentId)}/services/active`)
 }
 
 async function loadSlots() {
   slots = []
   if (!state.date) return
-  const query = new URLSearchParams({ slot_date: state.date, service_id: state.service })
-  slots = await request(`${departmentPath(state.branch)}/slots?${query}`)
+  const query = new URLSearchParams({ slot_date: state.date, service_id: state.serviceId })
+  slots = await request(`${departmentPath(state.departmentId)}/slots?${query}`)
 }
 
 async function issueTicket() {
   if (uncertainIssue) return
-  const payload = { service_id: state.service, source: state.booking ? 'web' : 'qr' }
+  const payload = { service_id: state.serviceId, source: state.booking ? 'web' : 'qr' }
   if (state.booking) {
     const slot = slots.find(slot => slot.slot_time.slice(0, 5) === state.time && slot.booked_count < slot.capacity)
     if (!slot) throw new Error('Выберите доступное время')
@@ -63,7 +62,7 @@ async function issueTicket() {
   }
   let ticket
   try {
-    ticket = await ticketApi.create(state.branch, payload)
+    ticket = await ticketApi.create(state.departmentId, payload)
     const ref = referenceFromTicket(ticket)
     ticketStorage.save(ref)
     uncertainIssue = true // Keep the issuing form disabled until navigation completes.
@@ -81,37 +80,36 @@ async function issueTicket() {
 
 function serviceScreen() {
   return `<main class="screen service-screen">
-    <header class="service-header">${logo()}<p>${branchText()}</p></header>
+    <header class="service-header">${logo()}<p>${departmentText()}</p></header>
     <div class="service-grid">${services.map(serviceCard).join('')}</div>
-    ${button(state.booking ? 'Выбрать дату и время' : 'Записаться в очередь', 'make-ticket', !state.service)}
+    ${button(state.booking ? 'Выбрать дату и время' : 'Записаться в очередь', 'make-ticket', !state.serviceId)}
   </main>`
 }
 
-function serviceCard([id, label, icon]) {
-  const selected = state.service === id
+function serviceCard(service) {
+  const selected = state.serviceId === service.id
   const className = `service-card${selected ? ' service-card--selected' : ''}`
-  const iconUrl = icon.replace('.svg', '-selected.svg')
 
   return `
-    <button class="${className}" data-service="${escapeHtml(id)}" aria-pressed="${selected}">
-      <span>${escapeHtml(label)}</span>
-      <span class="service-icon" aria-hidden="true" style="--service-icon: url('${iconUrl}')"></span>
+    <button class="${className}" data-service="${escapeHtml(service.id)}" aria-pressed="${selected}">
+      <span>${escapeHtml(service.name)}</span>
+      <span class="service-icon" aria-hidden="true" style="--service-icon: url('/assets/services-selected.svg')"></span>
     </button>
   `
 }
 
 function placeScreen() {
   const query = state.query.trim().toLocaleLowerCase('ru')
-  const matches = branches.filter(branch => (branch.code + ' ' + branch.address).toLocaleLowerCase('ru').includes(query))
+  const matches = departments.filter(department => (department.code + ' ' + department.address).toLocaleLowerCase('ru').includes(query))
   const results = matches.length
-    ? `<div class="branch-list">${matches.map(branch => `
-        <label class="branch-row">
-          <input type="radio" name="branch" value="${escapeHtml(branch.id)}" ${state.branch === branch.id ? 'checked' : ''}>
-          <span>Отделение № ${escapeHtml(branch.code)}: ${escapeHtml(branch.address)}</span>
+    ? `<div class="department-list">${matches.map(department => `
+        <label class="department-row">
+          <input type="radio" name="department" value="${escapeHtml(department.id)}" ${state.departmentId === department.id ? 'checked' : ''}>
+          <span>Отделение № ${escapeHtml(department.code)}: ${escapeHtml(department.address)}</span>
         </label>
       `).join('')}</div>`
     : '<p class="empty-results">Отделение не найдено. Попробуйте изменить поиск.</p>'
-  return `<main class="screen step-screen">${logo(true)}<section class="step-content"><h1>Выберите отделение почты</h1><input class="search-input" value="${escapeHtml(state.query)}" placeholder="Адрес или индекс" aria-label="Адрес или индекс">${results}</section>${button('Продолжить', 'place-next', !state.branch)}</main>`
+  return `<main class="screen step-screen">${logo(true)}<section class="step-content"><h1>Выберите отделение почты</h1><input class="search-input" value="${escapeHtml(state.query)}" placeholder="Адрес или индекс" aria-label="Адрес или индекс">${results}</section>${button('Продолжить', 'place-next', !state.departmentId)}</main>`
 }
 
 function dateOption({ value, day, weekday, disabled }) {
@@ -233,8 +231,8 @@ root.addEventListener('click', async (event) => {
     return
   }
   if (target.dataset.service) {
-    if (state.service === target.dataset.service) return
-    state.service = target.dataset.service
+    if (state.serviceId === target.dataset.service) return
+    state.serviceId = target.dataset.service
     // Keep the same icon resource and DOM nodes; only change the CSS color.
     root.querySelectorAll('[data-service]').forEach(option => {
       const selected = option === target
@@ -244,8 +242,8 @@ root.addEventListener('click', async (event) => {
     root.querySelector('[data-action="make-ticket"]').disabled = false
     return
   }
-  if (target.name === 'branch') {
-    state.branch = target.value
+  if (target.name === 'department') {
+    state.departmentId = target.value
     root.querySelector('[data-action="place-next"]').disabled = false
     return
   }
@@ -257,15 +255,15 @@ root.addEventListener('click', async (event) => {
     state.time = null
     root.querySelectorAll('.choice-strip').forEach(strip => { strip.scrollLeft = 0 })
   }
-  if (target.dataset.action === 'place-next' && state.branch) {
+  if (target.dataset.action === 'place-next' && state.departmentId) {
     await updateAsync(async () => { await loadServices(); state.step = 'service' })
     return
   }
-  if (target.dataset.action === 'date-next' && state.branch && state.service && state.date && state.time) {
+  if (target.dataset.action === 'date-next' && state.departmentId && state.serviceId && state.date && state.time) {
     await updateAsync(issueTicket)
     return
   }
-  if (target.dataset.action === 'make-ticket' && state.service) {
+  if (target.dataset.action === 'make-ticket' && state.serviceId) {
     await updateAsync(async () => {
       if (state.booking) { await loadSlots(); state.step = 'date' }
       else await issueTicket()
@@ -285,7 +283,7 @@ root.addEventListener('click', async (event) => {
 root.addEventListener('input', (event) => {
   if (!event.target.matches('.search-input')) return
   state.query = event.target.value
-  state.branch = null
+  state.departmentId = null
   render()
   const input = root.querySelector('.search-input')
   input.focus()
@@ -310,9 +308,9 @@ async function updateAsync(action) {
 }
 
 async function initialize() {
-  branches = (await request('/departments')).filter(branch => branch.is_active)
+  departments = (await request('/departments')).filter(department => department.is_active)
   if (!state.booking || state.step === 'service') {
-    if (!currentBranch()) throw new Error('QR-код должен содержать UUID существующего отделения, а не почтовый индекс.')
+    if (!currentDepartment()) throw new Error('QR-код должен содержать UUID отделения.')
     await loadServices()
   }
 }
