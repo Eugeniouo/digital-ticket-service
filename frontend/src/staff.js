@@ -58,8 +58,7 @@ let queue = [
     time: "В отделении",
   },
 ];
-let history = ["Окно № 3 открыто · Иванова А. С."],
-  problems = [
+let problems = [
     "Ожидание Ж-015 достигло 29 минут",
     "Нет открытого окна для услуги «Платежи и переводы»",
   ],
@@ -72,10 +71,6 @@ function notify(text) {
   notificationTimer = setTimeout(() => {
     document.querySelector("#toast").textContent = "";
   }, 3200);
-}
-function log(text) {
-  history.unshift(text);
-  notify(text);
 }
 let rules = [10, 10, 20, 2];
 const { queueList, table, operator, windows, overview, analytics, rulesView } =
@@ -106,7 +101,7 @@ function render() {
           "Аккаунты",
           "QR отделения",
         ];
-  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorBranch.id)}</strong><small>${esc(operatorBranch.address)}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<div class="grid two"><section class="card"><h2>Журнал событий</h2>${history.map((h, i) => `<div class="activity">${esc(h)}<small>Демо-сессия · событие ${history.length - i}</small></div>`).join("")}</section><section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section></div>`}</main></div>`);
+  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorBranch.id)}</strong><small>${esc(operatorBranch.address)}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section>`}</main></div>`);
 }
 function dialog(title, body, footer) {
   modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${title}"><div class="row"><h2>${title}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer ${title === "Закрыть окно?" ? "vertical" : ""}">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
@@ -166,17 +161,17 @@ document.addEventListener("click", (e) => {
     const i = queue.findIndex((q) => enabled.includes(q.service));
     if (i >= 0) {
       current = queue.splice(i, 1)[0];
-      log(`Талон ${current.id} вызван к окну № 3`);
+      notify(`Талон ${current.id} вызван к окну № 3`);
     }
   }
   if (a === "start" && current) {
     current.started = true;
-    log(`Начато обслуживание ${current.id}`);
+    notify(`Начато обслуживание ${current.id}`);
   }
   if (a === "repeat")
     notify(`Повторный вызов ${current.id} · демонстрационное уведомление`);
   if (a === "absent" && current && !current.started) {
-    log(`Талон ${current.id} закрыт: клиент не подошёл`);
+    notify(`Талон ${current.id} закрыт: клиент не подошёл`);
     current = null;
     if (closing) {
       opened = false;
@@ -184,7 +179,7 @@ document.addEventListener("click", (e) => {
     }
   }
   if (a === "finish" && current) {
-    log(`Обслуживание ${current.id} завершено`);
+    notify(`Обслуживание ${current.id} завершено`);
     current = null;
     served++;
     if (closing) {
@@ -203,12 +198,12 @@ document.addEventListener("click", (e) => {
       return;
     }
     opened = false;
-    log("Окно № 3 закрыто");
+    notify("Окно № 3 закрыто");
   }
   if (a === "close-later") {
     closing = true;
     modal.innerHTML = "";
-    log("Окно закроется после обслуживания");
+    notify("Окно закроется после обслуживания");
   }
   if (["open", "services"].includes(a) || a.startsWith("window-")) {
     pending = a;
@@ -264,8 +259,12 @@ document.addEventListener("click", (e) => {
         return;
       }
       enabled = values;
-      if (pending === "open") opened = true;
-      log("Настройки окна № 3 сохранены");
+      if (pending === "open") {
+        opened = true;
+        notify(`Окно № 3 открыто · ${signedOperator?.display_name || "Анна Иванова"}`);
+      } else {
+        notify("Настройки окна № 3 сохранены");
+      }
     } else if (pending === "add") {
       const ticket = {
         id: "Ж-" + String(serial++).padStart(3, "0"),
@@ -275,17 +274,19 @@ document.addEventListener("click", (e) => {
         time: "Только что",
       };
       queue.push(ticket);
-      log(`Добавлен талон ${ticket.id}`);
+      notify(`Добавлен талон ${ticket.id}`);
     } else if (pending === "problem") {
       problems.unshift(reason);
-      log("Проблема зарегистрирована");
+      notify(`Проблема зарегистрирована · ${reason}`);
     } else if (current) {
       if (pending === "redirect")
         current.service = modal.querySelector("#service").value;
       current.started = false;
       queue.push(current);
-      log(
-        `${current.id}: ${pending === "redirect" ? "перенаправлен" : "возвращён в очередь"} · ${reason}`,
+      notify(
+        pending === "redirect"
+          ? `${current.id}: перенаправлен · ${reason}`
+          : `${current.id}: возвращён в очередь · ${reason}`,
       );
       current = null;
       if (pending === "close-return" || closing) {
@@ -304,13 +305,13 @@ document.addEventListener("click", (e) => {
       return;
     }
     rules = values;
-    log("Демонстрационные настройки сохранены");
+    notify("Демонстрационные настройки сохранены");
   }
   if (a === "notification") {
     problems.unshift(
       "Адаптер уведомлений недоступен · повторная доставка ожидается (демо)",
     );
-    log("Показан сценарий сбоя уведомлений; очередь продолжает работу");
+    notify("Показан сценарий сбоя уведомлений; очередь продолжает работу");
   }
   render();
 });
