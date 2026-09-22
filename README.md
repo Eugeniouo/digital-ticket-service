@@ -109,12 +109,14 @@ just seed
 
 That calls the public HTTP API as `root` and creates two departments (`DEMO01`, `DEMO02`), services, windows with service bindings, department `admin` / `operator` accounts, and generated slots for today and tomorrow (Europe/Moscow). It is idempotent.
 
-Demo staff passwords match `QUERY_SERVICE_BOOTSTRAP_PASSWORD` unless `QUERY_SERVICE_SEED_STAFF_PASSWORD` is set:
+Demo staff logins are constants in `backend/query_service/seed_demo.py`. Password for all of them is `password`:
 
-| username | role |
-|---|---|
-| `admin-demo01` / `admin-demo02` | admin |
-| `operator-demo01` / `operator-demo02` | operator |
+| username | role | department |
+|---|---|---|
+| `admin1` | admin | DEMO01 |
+| `op1` | operator | DEMO01 |
+| `admin2` | admin | DEMO02 |
+| `op2` | operator | DEMO02 |
 
 You can read more about BaseSettings class here: [https://pydantic-docs.helpmanual.io/usage/settings/](https://pydantic-docs.helpmanual.io/usage/settings/)
 

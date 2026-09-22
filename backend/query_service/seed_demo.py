@@ -57,14 +57,21 @@ class DemoDepartment:
     windows: tuple[DemoWindow, ...]
 
 
+DEMO_PASSWORD = "password"  # noqa: S105
+
+DEMO_ADMIN_1 = "admin1"
+DEMO_OP_1 = "op1"
+DEMO_ADMIN_2 = "admin2"
+DEMO_OP_2 = "op2"
+
 DEMO_CATALOG: tuple[DemoDepartment, ...] = (
     DemoDepartment(
         code="DEMO01",
         address="Отделение Центр",
         open_time="09:00:00",
         close_time="18:00:00",
-        admin_username="admin-demo01",
-        operator_username="operator-demo01",
+        admin_username=DEMO_ADMIN_1,
+        operator_username=DEMO_OP_1,
         services=(
             DemoService(name="Консультация", duration_time=10),
             DemoService(name="Оформление", duration_time=15),
@@ -79,8 +86,8 @@ DEMO_CATALOG: tuple[DemoDepartment, ...] = (
         address="Отделение Север",
         open_time="09:00:00",
         close_time="18:00:00",
-        admin_username="admin-demo02",
-        operator_username="operator-demo02",
+        admin_username=DEMO_ADMIN_2,
+        operator_username=DEMO_OP_2,
         services=(
             DemoService(name="Консультация", duration_time=10),
             DemoService(name="Оформление", duration_time=15),
@@ -350,7 +357,6 @@ async def _seed_department(
     token: str,
     spec: DemoDepartment,
     *,
-    staff_password: str,
     slot_dates: tuple[date, date],
 ) -> None:
     department = await _ensure_department(http, token, spec)
@@ -364,7 +370,7 @@ async def _seed_department(
         token,
         username=spec.admin_username,
         display_name=f"Admin {spec.code}",
-        password=staff_password,
+        password=DEMO_PASSWORD,
         role="admin",
         department_id=department_id,
     )
@@ -373,7 +379,7 @@ async def _seed_department(
         token,
         username=spec.operator_username,
         display_name=f"Operator {spec.code}",
-        password=staff_password,
+        password=DEMO_PASSWORD,
         role="operator",
         department_id=department_id,
     )
@@ -412,7 +418,6 @@ async def seed_demo(
     *,
     username: str,
     password: str,
-    staff_password: str,
     catalog: tuple[DemoDepartment, ...] = DEMO_CATALOG,
     timezone: str | None = None,
 ) -> None:
@@ -426,7 +431,6 @@ async def seed_demo(
             http,
             token,
             spec,
-            staff_password=staff_password,
             slot_dates=slot_dates,
         )
 
@@ -434,7 +438,6 @@ async def seed_demo(
 async def _amain() -> None:
     username = settings.bootstrap_username.strip().lower()
     password = settings.bootstrap_password.strip()
-    staff_password = (settings.seed_staff_password or password).strip()
     if not username or not password:
         logger.error("bootstrap username or password are not set")
         raise SystemExit(1)
@@ -444,7 +447,6 @@ async def _amain() -> None:
         http,
         username=username,
         password=password,
-        staff_password=staff_password,
     )
     logger.info("demo seed finished")
 
