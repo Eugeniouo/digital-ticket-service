@@ -27,7 +27,10 @@ export async function request(path, { method = "GET", body, signal } = {}) {
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!response.ok) throw new ApiError(response.status);
-    return await response.json();
+    if (response.status === 204) return null;
+    const text = await response.text();
+    if (!text) return null;
+    return JSON.parse(text);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener("abort", abort);

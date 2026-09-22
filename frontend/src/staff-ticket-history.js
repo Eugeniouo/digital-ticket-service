@@ -42,49 +42,9 @@ function windowText(event) {
   return "";
 }
 
-export function demoHistoryEvents(ticket, { isCurrent = false, windowLabel = null } = {}) {
-  const now = Date.now();
-  const waitMs = Math.max(0, Number(ticket.wait) || 0) * 60000;
-  const events = [
-    {
-      changed_at: new Date(now - waitMs).toISOString(),
-      old_status: null,
-      new_status: "queued",
-      reason: "issued",
-      window_label: null,
-    },
-  ];
-
-  if (isCurrent) {
-    events.push({
-      changed_at: new Date(now - (ticket.started ? 120000 : 60000)).toISOString(),
-      old_status: "queued",
-      new_status: "called",
-      reason: "called",
-      window_label: windowLabel,
-    });
-
-    if (ticket.started) {
-      events.push({
-        changed_at: new Date(now - 30000).toISOString(),
-        old_status: "called",
-        new_status: "serving",
-        reason: "started",
-        window_label: windowLabel,
-      });
-    }
-  }
-
-  return events;
-}
-
-export function historyTimelineHtml(events, { demo = false } = {}) {
-  const notice = demo
-    ? '<p class="muted">Демонстрационные данные. Журнал статусов с сервера недоступен.</p>'
-    : "";
-
+export function historyTimelineHtml(events) {
   if (!events.length) {
-    return `${notice}<p class="muted">Записей истории нет</p>`;
+    return `<p class="muted">Записей истории нет</p>`;
   }
 
   const items = events
@@ -96,5 +56,5 @@ export function historyTimelineHtml(events, { demo = false } = {}) {
     })
     .join("");
 
-  return `${notice}<ol class="ticket-history">${items}</ol>`;
+  return `<ol class="ticket-history">${items}</ol>`;
 }

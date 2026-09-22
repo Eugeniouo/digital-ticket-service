@@ -8,18 +8,19 @@ import {
 } from "./shared/html.js";
 import { createStaffViews } from "./staff-views.js";
 import { currentOperator } from './operator-accounts.js';
-import { servicesForDepartment } from './mock-data.js';
-import { formatTicketLabel, ticketLabelPrefix } from './shared/ticket-label.js';
 import { ticketApi } from './tickets/api.js';
-import { demoHistoryEvents, historyTimelineHtml } from './staff-ticket-history.js';
+import { historyTimelineHtml } from './staff-ticket-history.js';
 import { isUuid } from './shared/ids.js';
 import { departmentIdFromSession } from './shared/staff-session.js';
-import { departmentApi } from './staff/api.js';
+import { departmentApi, issuesApi, servicesApi, staffApi, windowsApi } from './staff/api.js';
 import { queueRulesToMinutes, queueRulesToSeconds, readQueueRulesForm } from './staff/queue-rules.js';
+
 const signedOperator = currentOperator();
 let operatorDepartment = null;
-const services = servicesForDepartment(signedOperator?.department_id);
-// Demo controller: session state, user actions and dialogs.
+let services = [];
+let windows = [];
+let staffList = [];
+let issues = [];
 let analyticsOffset = 0;
 
 const root = document.querySelector("#staff");
@@ -29,32 +30,13 @@ let role =
       ? "admin"
       : "operator",
   page = role === "admin" ? "Обзор" : "Рабочее место",
-  opened = true,
+  opened = false,
   current = null,
-  closing = false,
-  served = 32,
-  serial = 26;
-function demoTicket({ label, service, source, wait, time }) {
-  return {
-    id: crypto.randomUUID(),
-    ticket_label: label,
-    service_id: service.id,
-    source,
-    wait,
-    time,
-  };
-}
-let queue = services.length >= 3 ? [
-  demoTicket({ label: "М-008", service: services[2], source: "web", wait: 3, time: "На 14:30" }),
-  demoTicket({ label: "П-015", service: services[0], source: "walk-in", wait: 29, time: "Повышен приоритет" }),
-  demoTicket({ label: "П-024", service: services[0], source: "qr", wait: 12, time: "В отделении" }),
-  demoTicket({ label: "П-025", service: services[1], source: "qr", wait: 8, time: "В отделении" }),
-] : [];
-let problems = [
-    "Ожидание П-015 достигло 29 минут",
-    "Нет открытого окна для услуги «Платежи и переводы»",
-  ],
-  enabled = services.slice(0, 3).map((service) => service.id);
+  served = 0,
+  windowId = null,
+  loadError = "";
+let queue = [];
+let enabled = [];
 const options = () => services.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("");
 let notificationTimer;
 function notify(text) {
@@ -71,9 +53,10 @@ let analyticsReport = null;
 let analyticsStatus = "idle";
 let analyticsRequest = 0;
 let analyticsAbort = null;
-const { queueList, table, operator, windows, overview, analytics, rulesView } =
+let actionBusy = false;
+const { queueList, table, operator, windows: windowsView, overview, analytics, rulesView } =
   createStaffViews(() => ({
-    operatorName: signedOperator?.display_name || "Анна Иванова",
+    operatorName: signedOperator?.display_name || "Оператор",
     analyticsOffset,
     analyticsDateValue: dateValueFromOffset(analyticsOffset),
     analyticsToday: todayDateValue(),
@@ -83,14 +66,124 @@ const { queueList, table, operator, windows, overview, analytics, rulesView } =
     queue,
     current,
     opened,
-    closing,
     enabled,
     served,
-    problems,
+    issues,
     rules: queueRules,
     rulesStatus: queueRulesStatus,
     services,
+    windows,
+    staffList,
+    windowLabel: seatedWindow()?.label || "окно",
+    loadError,
   }));
+
+function seatedWindow() {
+  return windows.find((window) => window.current_operator_id === signedOperator?.id) ?? null;
+}
+
+function waitMinutes(ticket) {
+  if (Number.isFinite(ticket.estimated_wait_time)) return ticket.estimated_wait_time;
+  const created = Date.parse(ticket.created_at);
+  if (Number.isNaN(created)) return 0;
+  return Math.max(0, Math.round((Date.now() - created) / 60000));
+}
+
+function ticketTime(ticket) {
+  const created = new Date(ticket.created_at);
+  if (Number.isNaN(created.getTime())) return "";
+  return created.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function mapTicket(ticket) {
+  if (!ticket) return null;
+
+  return {
+    id: ticket.id,
+    ticket_label: ticket.ticket_label,
+    service_id: ticket.service_id,
+    source: ticket.source,
+    status: ticket.status,
+    window_id: ticket.window_id,
+    created_at: ticket.created_at,
+    estimated_wait_time: ticket.estimated_wait_time,
+    wait: waitMinutes(ticket),
+    time: ticketTime(ticket),
+    started: ticket.status === "serving",
+  };
+}
+
+function syncWindowState() {
+  const seated = seatedWindow();
+  windowId = seated?.id ?? null;
+  opened = Boolean(seated);
+  enabled = seated?.open_service_ids ?? [];
+}
+
+function departmentId() {
+  return operatorDepartment?.id || departmentIdFromSession();
+}
+
+function failMessage(error, fallback) {
+  if (error?.status === 409) return "Нельзя выполнить: состояние окна или талона изменилось.";
+  if (error?.status === 403) return "Недостаточно прав.";
+  if (error?.status === 404) return "Объект не найден.";
+  return fallback;
+}
+
+function windowChecks(window, selectedIds) {
+  const selected = new Set(selectedIds ?? []);
+  const catalog = services.filter((service) => (window?.service_ids ?? []).includes(service.id));
+
+  return catalog
+    .map(
+      (s) =>
+        `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${selected.has(s.id) ? "checked" : ""}>${esc(s.name)}</label>`,
+    )
+    .join("");
+}
+
+function catalogChecks(window) {
+  const selected = new Set(window?.service_ids ?? []);
+
+  return services
+    .map(
+      (s) =>
+        `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${selected.has(s.id) ? "checked" : ""}>${esc(s.name)}</label>`,
+    )
+    .join("");
+}
+
+function bindWindowSelect() {
+  const select = modal.querySelector("#window");
+  const checks = modal.querySelector(".checks");
+  if (!select || !checks) return;
+
+  select.addEventListener("change", () => {
+    const window = windows.find((item) => item.id === select.value);
+    checks.innerHTML = windowChecks(
+      window,
+      window?.open_service_ids?.length ? window.open_service_ids : window?.service_ids,
+    );
+  });
+}
+
+function problemsPage() {
+  if (loadError) return `<section class="card"><h2>Проблемы и отклонения</h2><p>${esc(loadError)}</p></section>`;
+  const rows = issues.length
+    ? issues
+        .map((issue) => {
+          const resolve =
+            role === "admin" && issue.status === "open"
+              ? `<button class="ghost compact" data-action="resolve-issue" data-issue-id="${esc(issue.id)}">Закрыть</button>`
+              : "";
+          const status = issue.status === "resolved" ? "закрыта" : "открыта";
+          return `<div class="alert"><div class="row"><span>${esc(issue.message)}</span>${resolve}</div><p class="muted">${status}</p></div>`;
+        })
+        .join("")
+    : '<p class="muted">Открытых проблем нет</p>';
+  return `<section class="card"><h2>Проблемы и отклонения</h2>${rows}${btn("Сообщить о проблеме", "problem", "ghost")}</section>`;
+}
 
 function render() {
   const nav =
@@ -106,10 +199,32 @@ function render() {
           "Аккаунты",
           "QR отделения",
         ];
-  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorDepartment?.code ?? "—")}</strong><small>${esc(operatorDepartment?.address ?? "")}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note">ПРОТОТИП · ДЕМО-ДАННЫЕ<br>Без подключения к серверу<br><br><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${role === "operator" ? `Окно № 3 · ${esc(signedOperator?.display_name || "Анна Иванова")}` : "Состояние отделения и управление обслуживанием"}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${page === "Аккаунты" || page === "QR отделения" ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>` : page === "Рабочее место" ? operator() : page === "Обзор" ? overview() : page === "Очередь" ? `<section class="card"><h2>Все талоны</h2>${table()}</section>` : page === "Окна и услуги" ? windows() : page === "Правила очереди" ? rulesView() : page === "Аналитика" ? analytics() : `<section class="card"><h2>Проблемы и отклонения</h2>${problems.map((p) => `<div class="alert">${esc(p)}</div>`).join("")}${btn("Сбой уведомлений: демо", "notification", "ghost")}</section>`}</main></div>`);
+  const heading =
+    role === "operator"
+      ? `${esc(seatedWindow()?.label || "Окно не открыто")} · ${esc(signedOperator?.display_name || "Оператор")}`
+      : "Состояние отделения и управление обслуживанием";
+  const body =
+    page === "Аккаунты" || page === "QR отделения"
+      ? `<iframe title="${page}" src="/src/${page === "Аккаунты" ? "accounts" : "qr"}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>`
+      : page === "Рабочее место"
+        ? operator()
+        : page === "Обзор"
+          ? overview()
+          : page === "Очередь"
+            ? `<section class="card"><h2>Все талоны</h2>${table()}</section>`
+            : page === "Окна и услуги"
+              ? windowsView()
+              : page === "Правила очереди"
+                ? rulesView()
+                : page === "Аналитика"
+                  ? analytics()
+                  : page === "История смены"
+                    ? `<section class="card"><h2>История смены</h2><p class="muted">Журнала смены в API нет. История одного талона открывается кнопкой «История».</p></section>`
+                    : problemsPage();
+  renderHtml(root, `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorDepartment?.code ?? "—")}</strong><small>${esc(operatorDepartment?.address ?? "")}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, "nav-" + n, page === n ? "active" : "")).join("")}<div class="aside-note"><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === "operator" ? "Оператор" : "Руководитель"}</div><h1>${page}</h1><span class="muted">${heading}</span></div><div class="row">${role === "operator" ? btn(opened ? "Закрыть окно" : "Открыть окно", opened ? "close" : "open", "ghost") : ""}</div></div>${body}</main></div>`);
 }
 function dialog(title, body, footer) {
-  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${title}"><div class="row"><h2>${title}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer ${title === "Закрыть окно?" ? "vertical" : ""}">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
+  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="row"><h2>${esc(title)}</h2>${btn("✕", "dismiss", "ghost compact")}</div>${body}<div class="footer">${footer || btn("Сохранить", "confirm", "primary")}</div></section></div>`;
   modal.querySelector("input,select,textarea,button")?.focus();
 }
 let historyRequest = 0;
@@ -127,33 +242,25 @@ async function openTicketHistory(ticket) {
 
   dialog(title, panel, btn("Закрыть", "dismiss", "primary"));
 
-  const isCurrent = ticket === current;
-  const departmentId = operatorDepartment?.id;
+  const id = departmentId();
   let events = null;
-  let demo = true;
+  let errorText = "";
 
-  if (isUuid(departmentId) && isUuid(ticket.id)) {
+  if (isUuid(id) && isUuid(ticket.id)) {
     try {
       const rows = await ticketApi.statusHistory({
-        departmentId,
+        departmentId: id,
         ticketId: ticket.id,
       });
 
       if (Array.isArray(rows)) {
         events = [...rows].reverse();
-        demo = false;
       }
     } catch {
-      events = null;
+      errorText = "Не удалось загрузить историю талона.";
     }
-  }
-
-  if (demo || !events) {
-    events = demoHistoryEvents(ticket, {
-      isCurrent,
-      windowLabel: isCurrent ? "№ 3" : null,
-    });
-    demo = true;
+  } else {
+    errorText = "Не удалось загрузить историю талона.";
   }
 
   if (requestId !== historyRequest) return;
@@ -161,9 +268,90 @@ async function openTicketHistory(ticket) {
   const host = modal.querySelector("#ticket-history-panel");
   if (!host) return;
 
-  host.innerHTML = historyTimelineHtml(events, { demo });
+  host.innerHTML = errorText
+    ? `<p class="muted">${esc(errorText)}</p>`
+    : historyTimelineHtml(events || [], {});
 }
-let pending = "";
+
+async function applyQueue(department, id) {
+  const dto = await windowsApi.queue(department, id);
+  current = mapTicket(dto.current);
+  queue = (dto.upcoming ?? []).map(mapTicket);
+}
+
+async function reloadSurface() {
+  const id = departmentIdFromSession();
+  if (!id) {
+    loadError = "Отделение не указано в сессии";
+    render();
+    return;
+  }
+
+  try {
+    if (role === "admin") {
+      const [department, serviceRows, windowRows, ticketRows, issueRows, staffRows] = await Promise.all([
+        departmentApi.get(id),
+        servicesApi.list(id),
+        windowsApi.list(id),
+        ticketApi.incomplete(id),
+        issuesApi.list(id),
+        staffApi.list(),
+      ]);
+      operatorDepartment = department;
+      services = serviceRows;
+      windows = windowRows;
+      staffList = staffRows;
+      issues = issueRows;
+      queue = (ticketRows ?? []).map(mapTicket);
+      current = null;
+      syncWindowState();
+      loadError = "";
+    } else {
+      const [department, serviceRows, windowRows] = await Promise.all([
+        departmentApi.get(id),
+        servicesApi.active(id),
+        windowsApi.list(id),
+      ]);
+      operatorDepartment = department;
+      services = serviceRows;
+      windows = windowRows;
+      syncWindowState();
+      if (windowId) {
+        await applyQueue(id, windowId);
+      } else {
+        current = null;
+        queue = [];
+      }
+      loadError = "";
+    }
+  } catch (error) {
+    loadError = failMessage(error, "Не удалось загрузить данные отделения.");
+  }
+
+  render();
+}
+
+async function runWindowAction(fn, fallback) {
+  const id = departmentId();
+  if (!id || !windowId) {
+    notify("Сначала откройте окно");
+    return false;
+  }
+  if (actionBusy) return false;
+  actionBusy = true;
+  try {
+    await fn(id, windowId);
+    await reloadSurface();
+    return true;
+  } catch (error) {
+    notify(failMessage(error, fallback));
+    await reloadSurface();
+    return false;
+  } finally {
+    actionBusy = false;
+  }
+}
+
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     historyRequest++;
@@ -180,10 +368,16 @@ document.addEventListener("keydown", (e) => {
     }
   }
 });
+let pending = "";
+let pendingWindowId = "";
 document.addEventListener("click", (e) => {
   const trigger = e.target.closest("[data-action]");
   const a = trigger?.dataset.action;
   if (!a) return;
+  void handleAction(a, trigger);
+});
+
+async function handleAction(a, trigger) {
   if (a === 'open-report-calendar') {
     const input = document.querySelector('#analytics-date');
     if (!input) return;
@@ -237,75 +431,80 @@ document.addEventListener("click", (e) => {
     return;
   }
 
-  if (a === "call" && opened && !current) {
-    const i = queue.findIndex((q) => enabled.includes(q.service_id));
-    if (i >= 0) {
-      current = queue.splice(i, 1)[0];
-      notify(`Талон ${current.ticket_label} вызван к окну № 3`);
-    }
+  if (a === "call") {
+    const ok = await runWindowAction(windowsApi.callNext, "Не удалось вызвать следующего клиента");
+    if (ok && current) notify(`Талон ${current.ticket_label} вызван к ${seatedWindow()?.label || "окну"}`);
+    return;
   }
-  if (a === "start" && current) {
-    current.started = true;
-    notify(`Начато обслуживание ${current.ticket_label}`);
+  if (a === "start") {
+    const ok = await runWindowAction(windowsApi.start, "Не удалось начать обслуживание");
+    if (ok && current) notify(`Начато обслуживание ${current.ticket_label}`);
+    return;
   }
-  if (a === "repeat" && current)
-    notify(`Повторный вызов ${current.ticket_label} · демонстрационное уведомление`);
-  if (a === "absent" && current && !current.started) {
-    notify(`Талон ${current.ticket_label} закрыт: клиент не подошёл`);
-    current = null;
-    if (closing) {
-      opened = false;
-      closing = false;
-    }
+  if (a === "absent") {
+    const ok = await runWindowAction(windowsApi.noshow, "Не удалось отметить неявку");
+    if (ok) notify("Талон закрыт: клиент не подошёл");
+    return;
   }
-  if (a === "finish" && current) {
-    notify(`Обслуживание ${current.ticket_label} завершено`);
-    current = null;
-    served++;
-    if (closing) {
-      opened = false;
-      closing = false;
-    }
+  if (a === "finish") {
+    const label = current?.ticket_label;
+    const ok = await runWindowAction(async (id, idWindow) => {
+      await windowsApi.complete(id, idWindow);
+      served += 1;
+    }, "Не удалось завершить обслуживание");
+    if (ok && label) notify(`Обслуживание ${label} завершено`);
+    return;
   }
   if (a === "close") {
     if (current) {
       dialog(
         "Закрыть окно?",
-        "<p>Активный клиент останется у вас до завершения обслуживания. Или верните его в очередь с сохранением ожидания.</p>",
-        btn("Закрыть после обслуживания", "close-later", "primary") +
-          btn("Вернуть клиента и закрыть", "close-return", "danger"),
+        "<p>Окно нельзя закрыть, пока есть вызванный или обслуживаемый талон. Верните клиента в очередь и закройте окно.</p>",
+        btn("Вернуть клиента и закрыть", "close-return", "danger") + btn("Отмена", "dismiss", "ghost"),
       );
       return;
     }
-    opened = false;
-    notify("Окно № 3 закрыто");
+    const ok = await runWindowAction(windowsApi.close, "Не удалось закрыть окно");
+    if (ok) notify("Окно закрыто");
+    return;
   }
-  if (a === "close-later") {
-    closing = true;
-    modal.innerHTML = "";
-    notify("Окно закроется после обслуживания");
-  }
-  if (["open", "services"].includes(a) || a.startsWith("window-")) {
+  if (a === "open" || a === "services") {
     pending = a;
-    if (a.startsWith("window-") && a !== "window-3") {
-      dialog(
-        "Окно № " + a.slice(7),
-        "<p>Карточка демонстрационного окна. Полный интерактивный сценарий доступен для окна № 3.</p>",
-        btn("Понятно", "dismiss", "primary"),
-      );
+    const seated = seatedWindow();
+    const candidates = windows.filter(
+      (window) => !window.current_operator_id || window.current_operator_id === signedOperator?.id,
+    );
+    const selected = seated ?? candidates[0];
+    if (!selected) {
+      notify("Нет свободного окна");
+      return;
+    }
+    const windowField =
+      a === "open" && !seated
+        ? `<label for="window">Окно</label><select id="window">${candidates.map((window) => `<option value="${esc(window.id)}" ${window.id === selected.id ? "selected" : ""}>${esc(window.label)}</option>`).join("")}</select>`
+        : "";
+    dialog(
+      a === "open" ? "Открытие окна" : `Услуги ${selected.label}`,
+      `${windowField}<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${windowChecks(selected, selected.open_service_ids?.length ? selected.open_service_ids : selected.service_ids)}</div>`,
+    );
+    bindWindowSelect();
+    return;
+  }
+  if (a === "configure-window") {
+    pending = a;
+    pendingWindowId = trigger.dataset.windowId;
+    const window = windows.find((item) => item.id === pendingWindowId);
+    if (!window) {
+      notify("Окно не найдено");
       return;
     }
     dialog(
-      a === "open" ? "Открытие окна" : "Услуги окна № 3",
-      `<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${services.map((s) => `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${enabled.includes(s.id) ? "checked" : ""}>${esc(s.name)}</label>`).join("")}</div>`,
+      window.label,
+      `<p class="muted">Услуги каталога окна. Пустой список допустим, пока окно закрыто.</p><div class="checks">${catalogChecks(window)}</div>`,
     );
     return;
   }
-  if (
-    ["add", "redirect", "return", "close-return", "problem"].includes(
-      a,
-    )
-  ) {
+  if (["add", "redirect", "return", "close-return", "problem"].includes(a)) {
     pending = a;
     const titles = {
       add: "Клиент из живой очереди",
@@ -316,109 +515,153 @@ document.addEventListener("click", (e) => {
     };
     dialog(
       titles[a],
-      `${["add", "redirect"].includes(a) ? `<label for="service">Услуга</label><select id="service">${options()}</select>` : ""}${a === "redirect" ? '<p class="muted">Талон вернётся в общую очередь на выбранную услугу. Накопленное ожидание сохранится.</p>' : ""}${a !== "add" ? '<label for="reason">Причина</label><textarea id="reason" rows="3" placeholder="Кратко опишите ситуацию"></textarea>' : '<p class="muted">Источник будет указан автоматически. Сообщите номер талона клиенту.</p>'}`,
+      `${["add", "redirect"].includes(a) ? `<label for="service">Услуга</label><select id="service">${options()}</select>` : ""}${a === "redirect" ? '<p class="muted">Талон вернётся в общую очередь на выбранную услугу.</p>' : ""}${a === "problem" ? '<label for="reason">Описание</label><textarea id="reason" rows="3" placeholder="Кратко опишите ситуацию"></textarea>' : ""}${a === "add" ? '<p class="muted">Источник будет указан автоматически. Сообщите номер талона клиенту.</p>' : ""}`,
     );
     return;
   }
   if (a === "confirm") {
-    const reason = modal.querySelector("#reason")?.value.trim();
-    if (modal.querySelector("#reason") && !reason) {
-      notify("Укажите причину");
-      return;
-    }
-    if (
-      pending === "open" ||
-      pending === "services" ||
-      pending === "window-3"
-    ) {
-      const values = [...modal.querySelectorAll("input:checked")].map(
-        (x) => x.value,
-      );
-      if (!values.length) {
-        notify("Выберите хотя бы одну услугу");
-        return;
-      }
-      enabled = values;
-      if (pending === "open") {
-        opened = true;
-        notify(`Окно № 3 открыто · ${signedOperator?.display_name || "Анна Иванова"}`);
-      } else {
-        notify("Настройки окна № 3 сохранены");
-      }
-    } else if (pending === "add") {
-      const service = services.find((item) => item.id === modal.querySelector("#service").value);
-      if (!service) {
-        notify("Выберите услугу");
-        return;
-      }
-      const ticket = demoTicket({
-        label: formatTicketLabel(ticketLabelPrefix(service.kind), serial++),
-        service,
-        source: "walk-in",
-        wait: 0,
-        time: "Только что",
-      });
-      queue.push(ticket);
-      notify(`Добавлен талон ${ticket.ticket_label}`);
-    } else if (pending === "problem") {
-      problems.unshift(reason);
-      notify(`Проблема зарегистрирована · ${reason}`);
-    } else if (current) {
-      if (pending === "redirect") {
-        const service = services.find((item) => item.id === modal.querySelector("#service").value);
-        if (!service) {
-          notify("Выберите услугу");
-          return;
-        }
-        current.service_id = service.id;
-      }
-      current.started = false;
-      queue.push(current);
-      notify(
-        pending === "redirect"
-          ? `${current.ticket_label}: перенаправлен · ${reason}`
-          : `${current.ticket_label}: возвращён в очередь · ${reason}`,
-      );
-      current = null;
-      if (pending === "close-return" || closing) {
-        opened = false;
-        closing = false;
-      }
-    }
-    modal.innerHTML = "";
+    await confirmDialog();
+    return;
   }
   if (a === "save-rules") {
     void saveQueueRules();
     return;
   }
-  if (a === "notification") {
-    problems.unshift(
-      "Адаптер уведомлений недоступен · повторная доставка ожидается (демо)",
-    );
-    notify("Показан сценарий сбоя уведомлений; очередь продолжает работу");
-  }
-  render();
-});
-
-async function loadOperatorDepartment() {
-  const departmentId = departmentIdFromSession();
-  if (!departmentId) {
-    render();
+  if (a === "resolve-issue") {
+    const id = departmentId();
+    const issueId = trigger.dataset.issueId;
+    if (!id || !issueId || actionBusy) return;
+    actionBusy = true;
+    try {
+      await issuesApi.resolve(id, issueId);
+      notify("Проблема закрыта");
+      await reloadSurface();
+    } catch (error) {
+      notify(failMessage(error, "Не удалось закрыть проблему"));
+    } finally {
+      actionBusy = false;
+    }
     return;
-  }
-  try {
-    operatorDepartment = await departmentApi.get(departmentId);
-  } catch {
-    operatorDepartment = null;
   }
   render();
 }
 
+async function confirmDialog() {
+  const id = departmentId();
+  if (!id) {
+    notify("Отделение не указано в сессии");
+    return;
+  }
+  const reason = modal.querySelector("#reason")?.value.trim();
+  if (modal.querySelector("#reason") && !reason) {
+    notify("Укажите причину");
+    return;
+  }
+  if (actionBusy) return;
+  actionBusy = true;
+  try {
+    if (pending === "open" || pending === "services") {
+      const values = [...modal.querySelectorAll("input:checked")].map((x) => x.value);
+      if (!values.length) {
+        notify("Выберите хотя бы одну услугу");
+        return;
+      }
+      const selectedId = modal.querySelector("#window")?.value || windowId || seatedWindow()?.id;
+      if (!selectedId) {
+        notify("Выберите окно");
+        return;
+      }
+      await windowsApi.open(id, selectedId, { open_service_ids: values });
+      notify(pending === "open" ? "Окно открыто" : "Услуги окна сохранены");
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "configure-window") {
+      const values = [...modal.querySelectorAll("input:checked")].map((x) => x.value);
+      await windowsApi.update(id, pendingWindowId, { service_ids: values });
+      notify("Настройки окна сохранены");
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "add") {
+      const service = services.find((item) => item.id === modal.querySelector("#service").value);
+      if (!service) {
+        notify("Выберите услугу");
+        return;
+      }
+      const ticket = await ticketApi.create(id, { service_id: service.id, source: "walk-in", slot_id: null });
+      notify(`Добавлен талон ${ticket.ticket_label}`);
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "problem") {
+      await issuesApi.create(id, { message: reason });
+      notify("Проблема зарегистрирована");
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "redirect") {
+      const service = services.find((item) => item.id === modal.querySelector("#service").value);
+      if (!service) {
+        notify("Выберите услугу");
+        return;
+      }
+      if (!windowId) {
+        notify("Сначала откройте окно");
+        return;
+      }
+      await windowsApi.redirect(id, windowId, { service_id: service.id });
+      notify(`${current?.ticket_label || "Талон"}: перенаправлен`);
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "return") {
+      if (!windowId) {
+        notify("Сначала откройте окно");
+        return;
+      }
+      await windowsApi.requeue(id, windowId);
+      notify(`${current?.ticket_label || "Талон"}: возвращён в очередь`);
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    if (pending === "close-return") {
+      if (!windowId) {
+        notify("Сначала откройте окно");
+        return;
+      }
+      await windowsApi.requeue(id, windowId);
+      await windowsApi.close(id, windowId);
+      notify("Клиент возвращён в очередь, окно закрыто");
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    modal.innerHTML = "";
+  } catch (error) {
+    if (pending === "close-return" && error?.status === 409) {
+      notify("Клиент возвращён в очередь. Окно нельзя закрыть, пока есть активный талон.");
+      modal.innerHTML = "";
+      await reloadSurface();
+      return;
+    }
+    notify(failMessage(error, "Не удалось выполнить действие"));
+  } finally {
+    actionBusy = false;
+  }
+}
+
 async function loadQueueRules() {
   if (queueRulesStatus === "saving") return;
-  const departmentId = departmentIdFromSession();
+  const id = departmentIdFromSession();
   const requestId = ++queueRulesRequest;
-  if (!departmentId) {
+  if (!id) {
     queueRules = null;
     queueRulesStatus = "error";
     render();
@@ -427,7 +670,7 @@ async function loadQueueRules() {
   queueRulesStatus = "loading";
   render();
   try {
-    const dto = await departmentApi.getQueueRules(departmentId);
+    const dto = await departmentApi.getQueueRules(id);
     if (requestId !== queueRulesRequest) return;
     queueRules = queueRulesToMinutes(dto);
     queueRulesStatus = "ready";
@@ -446,8 +689,8 @@ async function saveQueueRules() {
     notify("Укажите целые значения от 0 до 1440 минут");
     return;
   }
-  const departmentId = departmentIdFromSession();
-  if (!departmentId) {
+  const id = departmentIdFromSession();
+  if (!id) {
     notify("Отделение не указано в сессии");
     return;
   }
@@ -455,7 +698,7 @@ async function saveQueueRules() {
   queueRulesStatus = "saving";
   render();
   try {
-    const dto = await departmentApi.patchQueueRules(departmentId, queueRulesToSeconds(minutes));
+    const dto = await departmentApi.patchQueueRules(id, queueRulesToSeconds(minutes));
     queueRules = queueRulesToMinutes(dto);
     queueRulesStatus = "ready";
     notify("Правила очереди сохранены");
@@ -467,20 +710,20 @@ async function saveQueueRules() {
 }
 
 async function loadAnalytics() {
-  const departmentId = departmentIdFromSession();
+  const id = departmentIdFromSession();
   const requestId = ++analyticsRequest;
   analyticsAbort?.abort();
   analyticsAbort = new AbortController();
   analyticsStatus = "loading";
   analyticsReport = null;
   render();
-  if (!departmentId) {
+  if (!id) {
     analyticsStatus = "error";
     render();
     return;
   }
   try {
-    const dto = await departmentApi.getAnalytics(departmentId, dateValueFromOffset(analyticsOffset), analyticsAbort.signal);
+    const dto = await departmentApi.getAnalytics(id, dateValueFromOffset(analyticsOffset), analyticsAbort.signal);
     if (requestId !== analyticsRequest) return;
     analyticsReport = toDailyReportView(dto);
     analyticsStatus = "ready";
@@ -493,7 +736,7 @@ async function loadAnalytics() {
 }
 
 render();
-void loadOperatorDepartment();
+void reloadSurface();
 
 root.addEventListener('change', event => {
   if (event.target.id !== 'analytics-date') return;

@@ -1,7 +1,7 @@
 import { isSignedIn } from './demo-session.js';
 import { currentOperator } from './operator-accounts.js';
 
-// Navigation guard for the prototype, not a security boundary.
+// Client navigation guard. The API still checks the token.
 let signedIn = false;
 try { signedIn = isSignedIn(); } catch { /* Login explains storage limitations. */ }
 if (signedIn && currentOperator()) {
