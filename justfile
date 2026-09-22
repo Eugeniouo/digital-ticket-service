@@ -56,7 +56,7 @@ serve:
 
 # setup Local API: env, DB, Valkey, migrate, bootstrap, serve
 [group("dev")]
-run:
+run-be:
     just env
     just db
     just migrate
@@ -85,7 +85,7 @@ frontend-build:
 
 # full stack: API, frontend, proxy, workers
 [group("deploy")]
-demo:
+run:
     just env
     docker compose up --build
 
