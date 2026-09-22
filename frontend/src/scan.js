@@ -1,4 +1,4 @@
-import { branches } from './mock-data.js';
+import { isUuid } from './tickets/storage.js';
 
 const video = document.querySelector('#camera');
 const status = document.querySelector('#scan-status');
@@ -22,9 +22,9 @@ function stopCamera() {
 function destination(raw) {
   try {
     const url = new URL(raw);
-    const branch = url.searchParams.get('branch');
+    const branch = url.searchParams.get('department') || url.searchParams.get('branch');
     // Do not navigate to arbitrary sites, scripts or unrelated QR codes.
-    if (url.origin !== location.origin || url.pathname !== '/src/visitor.html' || !branches.some(item => item.id === branch)) return null;
+    if (url.origin !== location.origin || url.pathname !== '/src/visitor.html' || !isUuid(branch)) return null;
     return `/src/visitor.html?branch=${encodeURIComponent(branch)}`;
   } catch { return null; }
 }

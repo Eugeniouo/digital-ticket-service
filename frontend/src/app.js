@@ -1,25 +1,25 @@
 import { renderHtml } from './shared/render.js'
 import './shared/assets.js'
 import { escapeHtml } from './shared/html.js'
-import { branches, getTimeGroups, mockTicket } from './mock-data.js'
+import { request, departmentPath, ticketApi } from './tickets/api.js'
+import { createTicketStorage, referenceFromTicket } from './tickets/storage.js'
 import { INITIAL_DATE, INITIAL_MONTH, formatDate, formatMonth, getMonthDays, getMonthOffset, shiftMonth } from './calendar.js'
 
 const root = document.querySelector('#root')
-const services = [
-  ['send', 'Отправить посылку', '/assets/send.svg'],
-  ['receive', 'Получить посылку', '/assets/receive.svg'],
-  ['pension', 'Пенсия и пособия', '/assets/receipt.svg'],
-  ['payments', 'Платежи и переводы', '/assets/payments.svg'],
-  ['letters', 'Заказные письма', '/assets/letter.svg'],
-  ['other', 'Прочие услуги', '/assets/services.svg'],
-]
+let branches = []
+let services = []
+let slots = []
+let busy = false
+let message = ''
+let uncertainIssue = false
+const ticketStorage = createTicketStorage()
 
 const state = {
   booking: window.location.pathname.startsWith('/booking'),
   step: window.location.pathname.startsWith('/booking') ? 'place' : 'service',
   service: null,
   query: '',
-  branch: branches.find(branch => branch.id === new URLSearchParams(location.search).get('branch'))?.id || null,
+  branch: new URLSearchParams(location.search).get('branch'),
   date: INITIAL_DATE,
   month: INITIAL_MONTH,
   time: null,
@@ -28,23 +28,89 @@ const state = {
 
 const logo = (compact = false) => `<img class="logo${compact ? ' logo--compact' : ''}" src="/assets/logo.svg" alt="Почта России" decoding="sync" fetchpriority="high">`
 const button = (label, action, disabled = false) => `<footer class="screen-footer"><button class="primary-button" data-action="${action}" ${disabled ? 'disabled' : ''}>${label}</button></footer>`
-const currentBranch = () => branches.find(branch => branch.id === state.branch) || branches[1]
-const branchText = () => `<strong>Отделение № ${currentBranch().id}</strong>: ${currentBranch().address}`
+const currentBranch = () => branches.find(branch => branch.id === state.branch)
+const branchText = () => currentBranch()
+  ? `<strong>Отделение № ${escapeHtml(currentBranch().code)}</strong>: ${escapeHtml(currentBranch().address)}` : ''
+
+function getTimeGroups() {
+  const times = [...new Set(slots.map(slot => slot.slot_time.slice(0, 5)))].sort()
+  return [{ id: 'available', label: 'Доступное время', slots: times.map(time => ({
+    time,
+    disabled: !slots.some(slot => slot.slot_time.slice(0, 5) === time && slot.booked_count < slot.capacity),
+  })) }]
+}
+
+async function loadServices() {
+  const values = await request(`${departmentPath(state.branch)}/services/active`)
+  // API has no icon field. Do not assign misleading icons based on array order.
+  services = values.map(service => [service.id, service.name, '/assets/services.svg'])
+}
+
+async function loadSlots() {
+  slots = []
+  if (!state.date) return
+  const query = new URLSearchParams({ slot_date: state.date, service_id: state.service })
+  slots = await request(`${departmentPath(state.branch)}/slots?${query}`)
+}
+
+async function issueTicket() {
+  if (uncertainIssue) return
+  const payload = { service_id: state.service, source: state.booking ? 'web' : 'qr' }
+  if (state.booking) {
+    const slot = slots.find(slot => slot.slot_time.slice(0, 5) === state.time && slot.booked_count < slot.capacity)
+    if (!slot) throw new Error('Выберите доступное время')
+    payload.slot_id = slot.id
+  }
+  let ticket
+  try {
+    ticket = await ticketApi.create(state.branch, payload)
+    const ref = referenceFromTicket(ticket)
+    ticketStorage.save(ref)
+    uncertainIssue = true // Keep the issuing form disabled until navigation completes.
+    // URL is a recovery fallback when localStorage is unavailable.
+    location.assign(`/?view=ticket&${new URLSearchParams(ref)}`)
+  } catch (error) {
+    // POST is deliberately not retried: the server may have issued a ticket.
+    if (!error.status || error.status >= 500) {
+      uncertainIssue = true
+      throw new Error('Не удалось подтвердить выдачу. Не создавайте повторную запись: обратитесь к сотруднику.')
+    }
+    throw error
+  }
+}
 
 function serviceScreen() {
   return `<main class="screen service-screen">
     <header class="service-header">${logo()}<p>${branchText()}</p></header>
-    <div class="service-grid">${services.map(([id, label, icon]) => `<button class="service-card${state.service === id ? ' service-card--selected' : ''}" data-service="${id}" aria-pressed="${state.service === id}"><span>${label}</span><span class="service-icon" aria-hidden="true" style="--service-icon: url('${icon.replace('.svg', '-selected.svg')}')"></span></button>`).join('')}</div>
+    <div class="service-grid">${services.map(serviceCard).join('')}</div>
     ${button(state.booking ? 'Выбрать дату и время' : 'Записаться в очередь', 'make-ticket', !state.service)}
   </main>`
 }
 
+function serviceCard([id, label, icon]) {
+  const selected = state.service === id
+  const className = `service-card${selected ? ' service-card--selected' : ''}`
+  const iconUrl = icon.replace('.svg', '-selected.svg')
+
+  return `
+    <button class="${className}" data-service="${escapeHtml(id)}" aria-pressed="${selected}">
+      <span>${escapeHtml(label)}</span>
+      <span class="service-icon" aria-hidden="true" style="--service-icon: url('${iconUrl}')"></span>
+    </button>
+  `
+}
+
 function placeScreen() {
   const query = state.query.trim().toLocaleLowerCase('ru')
-  const matches = branches.filter(branch => (branch.id + ' ' + branch.address).toLocaleLowerCase('ru').includes(query))
-  const results = !query ? '' : matches.length
-    ? `<div class="branch-list">${matches.map(branch => `<label class="branch-row"><input type="radio" name="branch" value="${branch.id}" ${state.branch === branch.id ? 'checked' : ''}><span>№ ${branch.id}: ${branch.address}</span></label>`).join('')}</div>`
-    : '<p class="empty-results">Отделение не найдено. Попробуйте «Черкесск» или индекс 369001.</p>'
+  const matches = branches.filter(branch => (branch.code + ' ' + branch.address).toLocaleLowerCase('ru').includes(query))
+  const results = matches.length
+    ? `<div class="branch-list">${matches.map(branch => `
+        <label class="branch-row">
+          <input type="radio" name="branch" value="${escapeHtml(branch.id)}" ${state.branch === branch.id ? 'checked' : ''}>
+          <span>Отделение № ${escapeHtml(branch.code)}: ${escapeHtml(branch.address)}</span>
+        </label>
+      `).join('')}</div>`
+    : '<p class="empty-results">Отделение не найдено. Попробуйте изменить поиск.</p>'
   return `<main class="screen step-screen">${logo(true)}<section class="step-content"><h1>Выберите отделение почты</h1><input class="search-input" value="${escapeHtml(state.query)}" placeholder="Адрес или индекс" aria-label="Адрес или индекс">${results}</section>${button('Продолжить', 'place-next', !state.branch)}</main>`
 }
 
@@ -106,47 +172,6 @@ function dateScreen() {
   </main>`
 }
 
-function ticketScreen() {
-  const time = state.booking ? `${formatDate(state.date)}, ${state.time}` : `Примерное время ожидания <b>${mockTicket.waitMinutes}&nbsp;мин</b>`
-  return `<main class="screen ticket-screen">${logo()}<section class="ticket-card" aria-label="Ваш талон"><div class="ticket-main"><h1>Ваш талон</h1><strong class="ticket-number">${mockTicket.number}</strong><p class="ticket-time"><img src="/assets/clock.svg" alt=""><span>${time}</span></p></div><p class="ticket-branch">${branchText()}</p></section><footer class="screen-footer"><button class="cancel-button" data-action="cancel">Отменить запись</button></footer></main>`
-}
-
-// Native dialog keeps focus inside the confirmation and makes the ticket inert.
-const cancelDialog = document.createElement('dialog')
-cancelDialog.className = 'cancel-dialog'
-cancelDialog.tabIndex = -1
-cancelDialog.setAttribute('aria-labelledby', 'cancel-title')
-cancelDialog.setAttribute('aria-describedby', 'cancel-description')
-cancelDialog.innerHTML = `
-  <div class="cancel-warning" aria-hidden="true"><img src="/assets/warning.svg" width="28" height="28" alt=""></div>
-  <h2 id="cancel-title">Отмена записи</h2>
-  <p id="cancel-description">Вы уверены, что хотите отменить свою запись и аннулировать талон?</p>
-  <button class="confirm-cancel-button" type="button">Отменить запись</button>
-  <button class="return-button" type="button">Вернуться обратно</button>
-`
-document.body.append(cancelDialog)
-
-function openCancelDialog() {
-  if (state.step !== 'ticket' || cancelDialog.open) return
-  document.body.classList.add('cancellation-open')
-  cancelDialog.showModal()
-  cancelDialog.focus({ preventScroll: true })
-}
-
-cancelDialog.querySelector('.return-button').addEventListener('click', () => cancelDialog.close())
-cancelDialog.querySelector('.confirm-cancel-button').addEventListener('click', () => {
-  state.service = null
-  if (state.booking) state.branch = null
-  state.query = ''
-  state.step = state.booking ? 'place' : 'service'
-  cancelDialog.close()
-  render()
-  window.scrollTo(0, 0)
-})
-cancelDialog.addEventListener('close', () => {
-  document.body.classList.remove('cancellation-open')
-  root.querySelector('[data-action="cancel"]')?.focus({ preventScroll: true })
-})
 
 function render() {
   const scrollPositions = new Map([...root.querySelectorAll('.choice-strip')].map(strip => [strip.dataset.scroll, strip.scrollLeft]))
@@ -156,7 +181,20 @@ function render() {
     : focusKey?.service ? '[data-service="' + focusKey.service + '"]'
     : focusKey?.month ? '[data-month="' + focusKey.month + '"]'
     : focusKey?.action === 'toggle-calendar' ? '[data-action="toggle-calendar"]' : null
-  renderHtml(root, state.step === 'place' ? placeScreen() : state.step === 'date' ? dateScreen() : state.step === 'ticket' ? ticketScreen() : serviceScreen())
+  renderHtml(root, state.step === 'place' ? placeScreen() : state.step === 'date' ? dateScreen() : serviceScreen())
+  if (message) {
+    const notice = document.createElement('p')
+    notice.setAttribute('role', 'status')
+    notice.textContent = message
+    root.querySelector('main').prepend(notice)
+    if (!busy && !uncertainIssue) {
+      const retry = document.createElement('button')
+      retry.dataset.action = 'retry-load'
+      retry.textContent = 'Обновить данные'
+      notice.append(document.createElement('br'), retry)
+    }
+  }
+  if (busy || uncertainIssue) root.querySelectorAll('button, input').forEach(control => { control.disabled = true })
   root.querySelectorAll('.choice-strip').forEach(strip => { strip.scrollLeft = scrollPositions.get(strip.dataset.scroll) || 0 })
   if (focusSelector) root.querySelector(focusSelector)?.focus({ preventScroll: true })
 }
@@ -169,16 +207,16 @@ function setSelectedChoice(selector, selected) {
   })
 }
 
-root.addEventListener('click', (event) => {
+root.addEventListener('click', async (event) => {
   const target = event.target.closest('button, input[type="radio"]')
-  if (!target || target.disabled) return
+  if (!target || target.disabled || busy) return
+  if (target.dataset.action === 'retry-load') {
+    await updateAsync(state.step === 'date' ? loadSlots : initialize)
+    return
+  }
   if (target.dataset.scrollGroup) {
     const strip = root.querySelector(`[data-scroll="${target.dataset.scrollGroup}"]`)
     strip.scrollBy({ left: Number(target.dataset.direction) * strip.clientWidth * 0.8, behavior: 'smooth' })
-    return
-  }
-  if (target.dataset.action === 'cancel') {
-    openCancelDialog()
     return
   }
   // A selection does not need a full screen render. This keeps the logo stable on mobile.
@@ -191,7 +229,7 @@ root.addEventListener('click', (event) => {
   if (target.dataset.date) {
     state.date = target.dataset.date
     state.time = null
-    render()
+    await updateAsync(loadSlots)
     return
   }
   if (target.dataset.service) {
@@ -219,13 +257,22 @@ root.addEventListener('click', (event) => {
     state.time = null
     root.querySelectorAll('.choice-strip').forEach(strip => { strip.scrollLeft = 0 })
   }
-  if (target.dataset.action === 'place-next' && state.branch) state.step = 'service'
-  if (target.dataset.action === 'date-next' && state.branch && state.service && state.date && state.time) {
-    const available = getTimeGroups(state.date).some(group => group.slots.some(slot => slot.time === state.time && !slot.disabled))
-    if (available) state.step = 'ticket'
-    else state.time = null
+  if (target.dataset.action === 'place-next' && state.branch) {
+    await updateAsync(async () => { await loadServices(); state.step = 'service' })
+    return
   }
-  if (target.dataset.action === 'make-ticket' && state.service) state.step = state.booking ? 'date' : 'ticket'
+  if (target.dataset.action === 'date-next' && state.branch && state.service && state.date && state.time) {
+    await updateAsync(issueTicket)
+    return
+  }
+  if (target.dataset.action === 'make-ticket' && state.service) {
+    await updateAsync(async () => {
+      if (state.booking) { await loadSlots(); state.step = 'date' }
+      else await issueTicket()
+    })
+    return
+  }
+  if (target.dataset.month) { await updateAsync(loadSlots); return }
   render()
   if (target.dataset.action === 'toggle-calendar' && !state.calendarExpanded) {
     const strip = root.querySelector('[data-scroll="dates"]')
@@ -245,4 +292,28 @@ root.addEventListener('input', (event) => {
   input.setSelectionRange(input.value.length, input.value.length)
 })
 
-render()
+async function updateAsync(action) {
+  busy = true
+  message = 'Загрузка…'
+  render()
+  try {
+    await action()
+    message = ''
+  } catch (error) {
+    message = error.status === 409 ? 'Выбранное время уже занято. Выберите другое.'
+      : error.status ? 'Сервис недоступен или запрос отклонён. Повторите позже.'
+        : error.message === 'Failed to fetch' ? 'Нет связи с сервером. Проверьте подключение.' : error.message
+  } finally {
+    busy = false
+    render()
+  }
+}
+
+async function initialize() {
+  branches = (await request('/departments')).filter(branch => branch.is_active)
+  if (!state.booking || state.step === 'service') {
+    if (!currentBranch()) throw new Error('QR-код должен содержать UUID существующего отделения, а не почтовый индекс.')
+    await loadServices()
+  }
+}
+await updateAsync(initialize)
