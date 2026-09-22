@@ -8,6 +8,7 @@ from query_service.database.base import Base
 from sqlalchemy import (
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     String,
     UniqueConstraint,
@@ -44,6 +45,31 @@ class WindowService(Base):
     )
 
     __table_args__ = (Index("ix_window_service_service_id", "service_id"),)
+
+
+class WindowOpenService(Base):
+    """Services selected for the current open shift."""
+
+    __tablename__ = "window_open_service"
+
+    window_id: Mapped[UUID] = mapped_column(
+        ForeignKey("window.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    service_id: Mapped[UUID] = mapped_column(
+        ForeignKey("service.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    __table_args__ = (
+        Index("ix_window_open_service_service_id", "service_id"),
+        ForeignKeyConstraint(
+            ["window_id", "service_id"],
+            ["window_service.window_id", "window_service.service_id"],
+            ondelete="CASCADE",
+            name="fk_window_open_service_catalog",
+        ),
+    )
 
 
 class Window(Base):
@@ -92,6 +118,11 @@ class Window(Base):
     services: Mapped[list[Service]] = relationship(
         secondary="window_service",
         back_populates="windows",
+        lazy="selectin",
+    )
+
+    open_services: Mapped[list[Service]] = relationship(
+        secondary="window_open_service",
         lazy="selectin",
     )
 

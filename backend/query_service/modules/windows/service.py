@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import Depends
 
+from query_service.database.models.service import Service
 from query_service.database.models.ticket import Ticket, TicketSource, TicketStatus
 from query_service.database.models.ticket_status_history import TicketStatusChange, TicketStatusChangeReason
 from query_service.database.models.window import Window, WindowStatus
@@ -11,6 +12,7 @@ from query_service.modules.notifications.service import NotificationService
 from query_service.modules.services.repository import ServiceRepository
 from query_service.modules.tickets.exceptions import InactiveServiceError
 from query_service.modules.tickets.priority import compute_priority_key, now_in_queue_tz
+from query_service.modules.tickets.schema import TicketResponse
 from query_service.modules.tickets.service import TicketService
 from query_service.modules.windows.exceptions import (
     DepartmentNotFoundError,
@@ -18,8 +20,11 @@ from query_service.modules.windows.exceptions import (
     EmptyQueueError,
     NoCalledTicketError,
     NoTicketInProgressError,
+    OpenServicesWouldBeEmptyError,
+    OperatorNotSeatedError,
     OperatorOnDifferentWindowError,
     ServiceNotInDepartmentError,
+    ServicesNotAllowedError,
     TicketAlreadyInProgressError,
     WindowClosedError,
     WindowHasActiveTicketError,
@@ -31,6 +36,8 @@ from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.schema import (
     WindowCreateRequestDTO,
     WindowDTO,
+    WindowOpenRequestDTO,
+    WindowQueueResponse,
     WindowRedirectRequestDTO,
     WindowUpdateRequestDTO,
 )
@@ -46,8 +53,18 @@ def window_to_dto(window: Window) -> WindowDTO:
         label=window.label,
         status=window.status,
         service_ids=[service.id for service in window.services],
+        open_service_ids=[service.id for service in window.open_services],
         current_operator_id=window.current_operator_id,
     )
+
+
+def _open_service_ids(window: Window) -> list[UUID]:
+    return [service.id for service in window.open_services]
+
+
+def _require_seated(window: Window, operator_id: UUID) -> None:
+    if window.current_operator_id != operator_id:
+        raise OperatorNotSeatedError
 
 
 def _elapsed_at_window_seconds(ticket: Ticket) -> int:
@@ -103,50 +120,122 @@ class WindowsService:
         department_id: UUID,
         window_id: UUID,
         payload: WindowUpdateRequestDTO,
-        operator_id: UUID,
     ) -> WindowDTO:
-        # Lock window before close check so call-next cannot sneak an active ticket in
         window = await self.repository.get_in_department_locked(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
 
-        if payload.status == WindowStatus.CLOSED and await self.repository.ticket_exists_for_window(window.id):
-            raise WindowHasActiveTicketError
+        label = payload.label
+        if label is not None and label != window.label:
+            if await self.repository.label_exists(department_id, label, exclude_window_id=window.id):
+                raise DuplicateWindowLabelError
+        else:
+            label = None
 
-        services = None
+        if label is not None:
+            window.label = label
+
         if payload.service_ids is not None:
             services = await self.repository.resolve_services_in_department(department_id, payload.service_ids)
             if services is None:
                 raise ServiceNotInDepartmentError
 
-        set_operator = False
-        current_operator_id: UUID | None = None
-        if payload.status == WindowStatus.CLOSED:
-            set_operator = True
-            current_operator_id = None
+            remaining: list[Service] | None = None
 
-        elif payload.status == WindowStatus.OPEN:
-            if window.current_operator_id is not None and window.current_operator_id != operator_id:
-                raise WindowOccupiedError
+            if window.status == WindowStatus.OPEN:
+                allowed_ids = {service.id for service in services}
+                remaining = [service for service in window.open_services if service.id in allowed_ids]
 
-            window_seated_at = await self.repository.get_by_operator(operator_id)
-            if window_seated_at is not None and window_seated_at.id != window.id:
-                raise OperatorOnDifferentWindowError
+                if not remaining:
+                    raise OpenServicesWouldBeEmptyError
 
-            set_operator = True
-            current_operator_id = operator_id
+            await self.repository.replace_catalog_services(window, services)
+            if remaining is not None:
+                await self.repository.replace_open_services(window, remaining)
 
-        await self.repository.update(
-            window,
-            status=payload.status,
-            services=services,
-            set_operator=set_operator,
-            current_operator_id=current_operator_id,
-        )
+        await self.repository.save()
+        return window_to_dto(window)
+
+    async def open_window(
+        self,
+        department_id: UUID,
+        window_id: UUID,
+        payload: WindowOpenRequestDTO,
+        operator_id: UUID,
+    ) -> WindowDTO:
+        window = await self.repository.get_in_department_locked(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+
+        allowed = list(window.services)
+        allowed_by_id = {service.id: service for service in allowed}
+
+        if payload.open_service_ids is None:
+            open_services = allowed
+        else:
+            unique_ids = list(dict.fromkeys(payload.open_service_ids))
+            if not unique_ids or any(service_id not in allowed_by_id for service_id in unique_ids):
+                raise ServicesNotAllowedError
+
+            open_services = [allowed_by_id[service_id] for service_id in unique_ids]
+
+        if not open_services:
+            raise ServicesNotAllowedError
+
+        if window.current_operator_id is not None and window.current_operator_id != operator_id:
+            raise WindowOccupiedError
+
+        seated_at = await self.repository.get_by_operator(operator_id)
+        if seated_at is not None and seated_at.id != window.id:
+            raise OperatorOnDifferentWindowError
+
+        window.status = WindowStatus.OPEN
+        window.current_operator_id = operator_id
+        await self.repository.replace_open_services(window, open_services)
+        await self.repository.save()
 
         return window_to_dto(window)
 
-    async def call_next(self, department_id: UUID, window_id: UUID) -> Ticket:
+    async def close_window(
+        self,
+        department_id: UUID,
+        window_id: UUID,
+        operator_id: UUID,
+    ) -> WindowDTO:
+        window = await self.repository.get_in_department_locked(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+        _require_seated(window, operator_id)
+
+        if await self.repository.ticket_exists_for_window(window.id):
+            raise WindowHasActiveTicketError
+
+        window.status = WindowStatus.CLOSED
+        window.current_operator_id = None
+        await self.repository.replace_open_services(window, [])
+        await self.repository.save()
+
+        return window_to_dto(window)
+
+    async def get_queue(
+        self,
+        department_id: UUID,
+        window_id: UUID,
+        operator_id: UUID,
+    ) -> WindowQueueResponse:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+        _require_seated(window, operator_id)
+
+        current = await self.repository.get_in_progress_ticket(window)
+        upcoming = await self.repository.list_eligible_queued(window, _open_service_ids(window))
+
+        current_dto = TicketResponse.model_validate(current) if current is not None else None
+        upcoming_dtos = [TicketResponse.model_validate(ticket) for ticket in upcoming]
+        return WindowQueueResponse(current=current_dto, upcoming=upcoming_dtos)
+
+    async def call_next(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Ticket:
         """
         Call-next moves the queue on a given window.
         By moving a queue, we run a lot of checks, so everything stays consistent and avoids data races.
@@ -154,17 +243,19 @@ class WindowsService:
         window = await self.repository.get_in_department(department_id, window_id)
         if window is None:
             raise WindowNotFoundError
+        _require_seated(window, operator_id)
 
         await self.tickets.expire_web_noshows(department_id)
         locked = await self.repository.lock_window(window.id)
         if locked is None:
-            raise EmptyQueueError
+            raise WindowNotFoundError
+        _require_seated(locked, operator_id)
         if locked.status != WindowStatus.OPEN:
             raise WindowClosedError
         if await self.repository.ticket_exists_for_window(locked.id):
             raise TicketAlreadyInProgressError
 
-        service_ids = [service.id for service in locked.services]
+        service_ids = _open_service_ids(locked)
         if not service_ids:
             raise WindowHasNoServicesError
 
@@ -196,15 +287,13 @@ class WindowsService:
         try:
             await self.notifications.enqueue_called(ticket, window)
 
-            service_ids = [service.id for service in window.services]
+            service_ids = _open_service_ids(window)
             await self.notifications.enqueue_approaching_for_services(window.department_id, service_ids)
         except Exception:
             logger.exception("notification enqueue failed")
 
-    async def start(self, department_id: UUID, window_id: UUID) -> Ticket:
-        window = await self.repository.get_in_department(department_id, window_id)
-        if window is None:
-            raise WindowNotFoundError
+    async def start(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Ticket:
+        window = await self._get_seated_window(department_id, window_id, operator_id)
 
         ticket = await self.repository.get_called_ticket_locked(window)
         if ticket is None:
@@ -227,10 +316,8 @@ class WindowsService:
 
         return ticket
 
-    async def mark_no_show(self, department_id: UUID, window_id: UUID) -> Ticket:
-        window = await self.repository.get_in_department(department_id, window_id)
-        if window is None:
-            raise WindowNotFoundError
+    async def mark_no_show(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Ticket:
+        window = await self._get_seated_window(department_id, window_id, operator_id)
 
         ticket = await self.repository.get_called_ticket_locked(window)
         if ticket is None:
@@ -262,10 +349,8 @@ class WindowsService:
         except Exception:
             logger.exception("notification enqueue failed")
 
-    async def complete(self, department_id: UUID, window_id: UUID) -> Ticket:
-        window = await self.repository.get_in_department(department_id, window_id)
-        if window is None:
-            raise WindowNotFoundError
+    async def complete(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Ticket:
+        window = await self._get_seated_window(department_id, window_id, operator_id)
 
         ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
@@ -288,10 +373,8 @@ class WindowsService:
 
         return ticket
 
-    async def requeue(self, department_id: UUID, window_id: UUID) -> Ticket:
-        window = await self.repository.get_in_department(department_id, window_id)
-        if window is None:
-            raise WindowNotFoundError
+    async def requeue(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Ticket:
+        window = await self._get_seated_window(department_id, window_id, operator_id)
         ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
             raise NoTicketInProgressError
@@ -314,10 +397,9 @@ class WindowsService:
         department_id: UUID,
         window_id: UUID,
         payload: WindowRedirectRequestDTO,
+        operator_id: UUID,
     ) -> Ticket:
-        window = await self.repository.get_in_department(department_id, window_id)
-        if window is None:
-            raise WindowNotFoundError
+        window = await self._get_seated_window(department_id, window_id, operator_id)
         ticket = await self.repository.get_in_progress_ticket_locked(window)
         if ticket is None:
             raise NoTicketInProgressError
@@ -355,3 +437,10 @@ class WindowsService:
         await self.tickets.release_slot(slot_id)
 
         return requeued
+
+    async def _get_seated_window(self, department_id: UUID, window_id: UUID, operator_id: UUID) -> Window:
+        window = await self.repository.get_in_department(department_id, window_id)
+        if window is None:
+            raise WindowNotFoundError
+        _require_seated(window, operator_id)
+        return window

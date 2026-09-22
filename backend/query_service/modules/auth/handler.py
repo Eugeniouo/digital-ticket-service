@@ -46,7 +46,9 @@ async def sign_in(
 
 
 @auth_router.get("/me", response_model=StaffDTO)
-async def me(staff: Staff = Depends(get_current_staff)) -> StaffDTO:
+async def me(
+    staff: Staff = Depends(get_current_staff),
+) -> StaffDTO:
     return staff_to_dto(staff)
 
 

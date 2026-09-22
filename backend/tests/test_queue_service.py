@@ -20,6 +20,8 @@ from query_service.modules.windows.exceptions import (
 from query_service.modules.windows.repository import WindowsRepository
 from query_service.modules.windows.service import WindowsService
 
+OPERATOR_ID = uuid4()
+
 
 @pytest.fixture
 def service() -> tuple[WindowsService, Mock, Mock]:
@@ -67,7 +69,8 @@ async def test_call_next_returns_next_ticket(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
-            current_operator_id=None,
+            open_services=[SimpleNamespace(id=service_id)],
+            current_operator_id=OPERATOR_ID,
         ),
     )
     ticket = cast(
@@ -79,7 +82,7 @@ async def test_call_next_returns_next_ticket(
     repository.lock_window.return_value = window
     repository.find_next_eligible_ticket.return_value = ticket
 
-    result = await svc.call_next(department_id, window_id)
+    result = await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     assert result is ticket
     repository.get_in_department.assert_awaited_once_with(department_id, window_id)
@@ -105,7 +108,8 @@ async def test_call_next_succeeds_when_notification_enqueue_fails(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
-            current_operator_id=None,
+            open_services=[SimpleNamespace(id=service_id)],
+            current_operator_id=OPERATOR_ID,
         ),
     )
     ticket = cast(
@@ -118,7 +122,7 @@ async def test_call_next_succeeds_when_notification_enqueue_fails(
     repository.find_next_eligible_ticket.return_value = ticket
     cast(Mock, svc.notifications).enqueue_called.side_effect = RuntimeError("outbox unavailable")
 
-    result = await svc.call_next(department_id, window_id)
+    result = await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     assert result is ticket
     assert ticket.status == TicketStatus.CALLED
@@ -137,7 +141,7 @@ async def test_call_next_raises_when_window_not_found(
     repository.get_in_department.return_value = None
 
     with pytest.raises(WindowNotFoundError):
-        await svc.call_next(department_id, window_id)
+        await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     tickets.expire_web_noshows.assert_not_awaited()
     repository.lock_window.assert_not_awaited()
@@ -160,7 +164,8 @@ async def test_call_next_raises_when_queue_is_empty(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
-            current_operator_id=None,
+            open_services=[SimpleNamespace(id=service_id)],
+            current_operator_id=OPERATOR_ID,
         ),
     )
 
@@ -169,7 +174,7 @@ async def test_call_next_raises_when_queue_is_empty(
     repository.find_next_eligible_ticket.return_value = None
 
     with pytest.raises(EmptyQueueError):
-        await svc.call_next(department_id, window_id)
+        await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     tickets.expire_web_noshows.assert_awaited_once_with(department_id)
     repository.find_next_eligible_ticket.assert_awaited_once_with(window, [service_id])
@@ -205,6 +210,8 @@ async def test_call_next_raises_guard_errors(
             department_id=department_id,
             status=status,
             services=services,
+            open_services=services,
+            current_operator_id=OPERATOR_ID,
         ),
     )
 
@@ -213,7 +220,7 @@ async def test_call_next_raises_guard_errors(
     repository.ticket_exists_for_window.return_value = setup == "in_progress"
 
     with pytest.raises(error):
-        await svc.call_next(department_id, window_id)
+        await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     tickets.expire_web_noshows.assert_awaited_once_with(department_id)
     repository.find_next_eligible_ticket.assert_not_awaited()
@@ -236,7 +243,8 @@ async def test_call_next_expires_web_no_shows_before_assigning_ticket(
             department_id=department_id,
             status=WindowStatus.OPEN,
             services=[SimpleNamespace(id=service_id)],
-            current_operator_id=None,
+            open_services=[SimpleNamespace(id=service_id)],
+            current_operator_id=OPERATOR_ID,
         ),
     )
     ticket = cast(
@@ -260,7 +268,7 @@ async def test_call_next_expires_web_no_shows_before_assigning_ticket(
     tickets.expire_web_noshows.side_effect = expire_web_noshows
     repository.find_next_eligible_ticket.side_effect = find_next_eligible_ticket
 
-    result = await svc.call_next(department_id, window_id)
+    result = await svc.call_next(department_id, window_id, OPERATOR_ID)
 
     assert result is ticket
     assert call_order == ["expire", "assign"]
@@ -274,7 +282,7 @@ async def test_requeue_uses_ticket_service(
 
     department_id = uuid4()
     window_id = uuid4()
-    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=None))
+    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=OPERATOR_ID))
     ticket = cast(
         Ticket,
         SimpleNamespace(id=uuid4(), called_at=None),
@@ -285,7 +293,7 @@ async def test_requeue_uses_ticket_service(
     repository.get_in_progress_ticket_locked.return_value = ticket
     tickets.requeue.return_value = requeued
 
-    result = await svc.requeue(department_id, window_id)
+    result = await svc.requeue(department_id, window_id, OPERATOR_ID)
 
     assert result is requeued
     tickets.requeue.assert_awaited_once_with(
@@ -294,7 +302,7 @@ async def test_requeue_uses_ticket_service(
         TicketStatusChange(
             new_status=TicketStatus.QUEUED,
             reason=TicketStatusChangeReason.REQUEUED,
-            staff_id=None,
+            staff_id=OPERATOR_ID,
             window_id=window_id,
         ),
     )
@@ -314,7 +322,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
     service_id = uuid4()
     slot_id = uuid4()
 
-    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=None))
+    window = cast(Window, SimpleNamespace(id=window_id, current_operator_id=OPERATOR_ID))
     ticket = cast(
         Ticket,
         SimpleNamespace(
@@ -345,6 +353,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
         department_id,
         window_id,
         WindowRedirectRequestDTO(service_id=service_id),
+        OPERATOR_ID,
     )
 
     assert result is requeued
@@ -359,6 +368,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
         department_id,
         window_id,
         WindowRedirectRequestDTO(service_id=service_id),
+        OPERATOR_ID,
     )
 
     assert ticket.origin_source == TicketSource.WEB
@@ -369,7 +379,7 @@ async def test_redirect_converts_to_walk_in_and_releases_slot(
         TicketStatusChange(
             new_status=TicketStatus.QUEUED,
             reason=TicketStatusChangeReason.REDIRECTED,
-            staff_id=None,
+            staff_id=OPERATOR_ID,
             window_id=window_id,
         ),
     )
@@ -401,7 +411,7 @@ async def test_record_status_change_writes_history_row() -> None:
             old_status=TicketStatus.QUEUED,
             new_status=TicketStatus.CALLED,
             reason=TicketStatusChangeReason.CALLED,
-            staff_id=None,
+            staff_id=OPERATOR_ID,
             window_id=window_id,
         ),
     )
