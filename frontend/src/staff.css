@@ -1,10 +1,52 @@
-.report-date { display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; margin-bottom: 8px; font-size: 19px; font-weight: 600; flex-wrap: wrap; }
-.report-date-toggle { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; background: #eef0ff; color: #1928dc; border-radius: 10px; }
-.report-date-toggle span { width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); }
-.report-date-input { position: absolute; width: 1px; height: 1px; opacity: 0; padding: 0; bottom: 0; left: 50%; pointer-events: none; }
-.report-date-input:focus-visible, .report-date-input.is-visible { position: static; opacity: 1; width: auto; height: auto; pointer-events: auto; padding: 8px; }
+.report-date {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  position: relative;
+  margin-bottom: 8px;
+  font-size: 19px;
+  font-weight: 600;
+  flex-wrap: wrap;
+}
+.report-date-toggle {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: #eef0ff;
+  color: #1928dc;
+  border-radius: 10px;
+}
+.report-date-toggle span {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+.report-date-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  padding: 0;
+  bottom: 0;
+  left: 50%;
+  pointer-events: none;
+}
+.report-date-input:focus-visible,
+.report-date-input.is-visible {
+  position: static;
+  opacity: 1;
+  width: auto;
+  height: auto;
+  pointer-events: auto;
+  padding: 8px;
+}
 :root {
-  font-family: "Golos Text", Arial, sans-serif;
+  font-family: 'Golos Text', Arial, sans-serif;
   color: #292c38;
   background: #f5f6fa;
   --blue: #1928dc;
@@ -182,10 +224,7 @@ p {
   gap: 20px;
 }
 .operator {
-  grid-template-columns: minmax(240px, 1fr) minmax(310px, 1.35fr) minmax(
-      210px,
-      0.8fr
-    );
+  grid-template-columns: minmax(240px, 1fr) minmax(310px, 1.35fr) minmax(210px, 0.8fr);
 }
 .card {
   background: white;
@@ -303,7 +342,7 @@ tbody tr[data-action] {
   position: relative;
 }
 .ticket-history li::before {
-  content: "";
+  content: '';
   position: absolute;
   left: -17px;
   top: 6px;
@@ -378,7 +417,7 @@ textarea {
   background: white;
   color: #292c38;
 }
-input[type="checkbox"] {
+input[type='checkbox'] {
   width: auto;
   margin-right: 10px;
 }

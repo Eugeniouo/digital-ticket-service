@@ -1,16 +1,16 @@
 <!doctype html>
 <html lang="ru">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Вход — Почта России</title>
-    <link rel="stylesheet" href="/src/login.css">
-    <link rel="stylesheet" href="/src/navigation.css">
+    <link rel="stylesheet" href="/src/login.css" />
+    <link rel="stylesheet" href="/src/navigation.css" />
   </head>
   <body>
     <main class="login-layout">
       <section class="login-card" aria-labelledby="login-title">
-        <img class="login-logo" src="/assets/logo.svg" alt="Почта России">
+        <img class="login-logo" src="/assets/logo.svg" alt="Почта России" />
         <p class="eyebrow">Электронная очередь</p>
         <h1 id="login-title">Вход для сотрудников</h1>
         <p class="description">Войдите в рабочее пространство отделения</p>
@@ -18,13 +18,35 @@
           <label for="department">Отделение</label>
           <select id="department" name="department_id" required></select>
           <label for="login">Логин</label>
-          <input id="login" name="username" autocomplete="username" placeholder="Введите логин" required minlength="3" maxlength="40" autocapitalize="none" spellcheck="false">
+          <input
+            id="login"
+            name="username"
+            autocomplete="username"
+            placeholder="Введите логин"
+            required
+            minlength="3"
+            maxlength="40"
+            autocapitalize="none"
+            spellcheck="false"
+          />
           <label for="password">Пароль</label>
-          <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Введите пароль" required minlength="8" maxlength="128">
+          <input
+            id="password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            placeholder="Введите пароль"
+            required
+            minlength="8"
+            maxlength="128"
+          />
           <p id="login-error" class="error" role="alert"></p>
           <button class="login-submit" type="submit">Войти</button>
         </form>
-        <p class="demo-note">Войдите с учётной записью отделения. Руководитель настраивает правила очереди и смотрит аналитику своего отделения.</p>
+        <p class="demo-note">
+          Войдите с учётной записью отделения. Руководитель настраивает правила очереди и смотрит
+          аналитику своего отделения.
+        </p>
         <a class="visitor-link" href="/">Перейти к записи посетителя →</a>
       </section>
     </main>

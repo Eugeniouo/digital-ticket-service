@@ -17,7 +17,7 @@
   text-decoration: none;
 }
 .app-navigation a:hover,
-.app-navigation a[aria-current="page"] {
+.app-navigation a[aria-current='page'] {
   background: #eef0ff;
   color: #1928dc;
 }

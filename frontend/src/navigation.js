@@ -5,7 +5,9 @@ if (window.self === window.top && location.pathname !== '/') {
   navigation.className = 'app-navigation';
   navigation.setAttribute('aria-label', 'Навигация');
   const link = document.createElement('a');
-  const staffPage = ['/src/staff.html', '/src/accounts.html', '/src/qr.html'].includes(location.pathname);
+  const staffPage = ['/src/staff.html', '/src/accounts.html', '/src/qr.html'].includes(
+    location.pathname,
+  );
   link.textContent = staffPage ? 'Выйти' : '← На главную';
   link.href = staffPage ? '/src/login.html' : '/';
   if (staffPage) link.addEventListener('click', signOut);

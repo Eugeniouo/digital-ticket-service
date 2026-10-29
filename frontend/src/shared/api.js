@@ -1,4 +1,4 @@
-import { getAccessToken } from "./staff-session.js";
+import { getAccessToken } from './staff-session.js';
 
 export class ApiError extends Error {
   constructor(status) {
@@ -7,22 +7,22 @@ export class ApiError extends Error {
   }
 }
 
-export async function request(path, { method = "GET", body, signal } = {}) {
+export async function request(path, { method = 'GET', body, signal } = {}) {
   const controller = new AbortController();
   const abort = () => controller.abort();
-  signal?.addEventListener("abort", abort, { once: true });
+  signal?.addEventListener('abort', abort, { once: true });
   if (signal?.aborted) abort();
   const timeout = setTimeout(abort, 10000);
   const token = getAccessToken();
   const headers = {};
-  if (body) headers["Content-Type"] = "application/json";
+  if (body) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
     const response = await fetch(`/api${path}`, {
       method,
       signal: controller.signal,
-      cache: "no-store",
-      credentials: "same-origin",
+      cache: 'no-store',
+      credentials: 'same-origin',
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -33,7 +33,7 @@ export async function request(path, { method = "GET", body, signal } = {}) {
     return JSON.parse(text);
   } finally {
     clearTimeout(timeout);
-    signal?.removeEventListener("abort", abort);
+    signal?.removeEventListener('abort', abort);
   }
 }
 

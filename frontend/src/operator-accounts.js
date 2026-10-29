@@ -35,14 +35,20 @@ export function listOperators() {
   return staffApi.list();
 }
 
-export async function createOperator({ username, display_name, department_id, password }, role = 'operator') {
+export async function createOperator(
+  { username, display_name, department_id, password },
+  role = 'operator',
+) {
   username = username.trim().toLowerCase();
   display_name = display_name.trim();
   password = password.trim();
 
-  if (!/^[a-z0-9._-]{3,40}$/.test(username)) throw new Error('Логин: 3–40 латинских букв, цифр, точек, дефисов или подчёркиваний.');
-  if (!display_name || display_name.length > 100) throw new Error('Укажите имя длиной до 100 символов.');
-  if (password.length < 8 || password.length > 128) throw new Error('Пароль должен содержать от 8 до 128 символов.');
+  if (!/^[a-z0-9._-]{3,40}$/.test(username))
+    throw new Error('Логин: 3–40 латинских букв, цифр, точек, дефисов или подчёркиваний.');
+  if (!display_name || display_name.length > 100)
+    throw new Error('Укажите имя длиной до 100 символов.');
+  if (password.length < 8 || password.length > 128)
+    throw new Error('Пароль должен содержать от 8 до 128 символов.');
   validateDepartment(department_id);
 
   try {
@@ -54,7 +60,8 @@ export async function createOperator({ username, display_name, department_id, pa
 
 export async function changePassword(id, password) {
   password = password.trim();
-  if (password.length < 8 || password.length > 128) throw new Error('Пароль должен содержать от 8 до 128 символов.');
+  if (password.length < 8 || password.length > 128)
+    throw new Error('Пароль должен содержать от 8 до 128 символов.');
   if (!isUuid(id)) throw new Error('Аккаунт не найден.');
 
   try {

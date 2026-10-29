@@ -13,5 +13,6 @@ try {
   join.href = `/?source=qr&department=${encodeURIComponent(department.id)}`;
   join.hidden = false;
 } catch {
-  caption.textContent = 'Не удалось загрузить отделение. Проверьте связь и QR-код: он должен содержать UUID отделения.';
+  caption.textContent =
+    'Не удалось загрузить отделение. Проверьте связь и QR-код: он должен содержать UUID отделения.';
 }

@@ -1,5 +1,5 @@
-const TOKEN_KEY = "pochta-staff-access-token";
-const STAFF_KEY = "pochta-staff";
+const TOKEN_KEY = 'pochta-staff-access-token';
+const STAFF_KEY = 'pochta-staff';
 
 function readStorage(key) {
   try {
@@ -30,7 +30,7 @@ export function getStaff() {
   if (!raw) return null;
   try {
     const staff = JSON.parse(raw);
-    if (!staff || typeof staff !== "object" || typeof staff.id !== "string") return null;
+    if (!staff || typeof staff !== 'object' || typeof staff.id !== 'string') return null;
     return staff;
   } catch {
     return null;
@@ -42,8 +42,8 @@ export function hasStaffSession() {
 }
 
 export function setStaffSession(accessToken, staff) {
-  if (typeof accessToken !== "string" || !accessToken || !staff?.id) {
-    throw new Error("Invalid staff session");
+  if (typeof accessToken !== 'string' || !accessToken || !staff?.id) {
+    throw new Error('Invalid staff session');
   }
   writeStorage(TOKEN_KEY, accessToken);
   writeStorage(STAFF_KEY, JSON.stringify(staff));
@@ -52,11 +52,11 @@ export function setStaffSession(accessToken, staff) {
 export function clearStaffSession() {
   clearStorage(TOKEN_KEY);
   clearStorage(STAFF_KEY);
-  clearStorage("pochta-demo-sign-in");
-  clearStorage("pochta-demo-operator-id");
+  clearStorage('pochta-demo-sign-in');
+  clearStorage('pochta-demo-operator-id');
 }
 
 export function departmentIdFromSession() {
   const id = getStaff()?.department_id;
-  return typeof id === "string" && id ? id : null;
+  return typeof id === 'string' && id ? id : null;
 }

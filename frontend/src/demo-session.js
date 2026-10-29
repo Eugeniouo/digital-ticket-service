@@ -1,4 +1,4 @@
-import { clearStaffSession, hasStaffSession } from "./shared/staff-session.js";
+import { clearStaffSession, hasStaffSession } from './shared/staff-session.js';
 
 export function isSignedIn() {
   return hasStaffSession();
@@ -9,5 +9,5 @@ export function signOut() {
 }
 
 export function staffDestination(role) {
-  return `/src/staff.html?role=${role === "admin" ? "admin" : "operator"}`;
+  return `/src/staff.html?role=${role === 'admin' ? 'admin' : 'operator'}`;
 }

@@ -1,4 +1,58 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Операторы — Почта России</title><link rel="stylesheet" href="/src/staff.css"><link rel="stylesheet" href="/src/navigation.css"></head>
-<body><main style="max-width:1100px"><img src="/assets/logo.svg" alt="Почта России" width="220"><h1 class="section-gap">Аккаунты операторов</h1><p class="muted">Управление операторами отделения. Новый аккаунт сразу может войти в систему.</p>
-<div class="grid two"><section class="card"><h2>Создать оператора</h2><form id="create-account"><label for="name">Имя оператора</label><input id="name" name="display_name" required maxlength="100"><label for="username">Логин</label><input id="username" name="username" required minlength="3" maxlength="40" autocomplete="off" autocapitalize="none" spellcheck="false"><label for="new-password">Пароль</label><input id="new-password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password"><p id="account-department" class="muted"></p><button class="primary section-gap" type="submit">Создать аккаунт</button></form></section><section class="card"><h2>Операторы</h2><div id="accounts"></div></section></div><p id="account-message" role="status"></p></main><div id="modal"></div><script type="module" src="/src/accounts.js"></script><script type="module" src="/src/navigation.js"></script></body></html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Операторы — Почта России</title>
+    <link rel="stylesheet" href="/src/staff.css" />
+    <link rel="stylesheet" href="/src/navigation.css" />
+  </head>
+  <body>
+    <main style="max-width: 1100px">
+      <img src="/assets/logo.svg" alt="Почта России" width="220" />
+      <h1 class="section-gap">Аккаунты операторов</h1>
+      <p class="muted">
+        Управление операторами отделения. Новый аккаунт сразу может войти в систему.
+      </p>
+      <div class="grid two">
+        <section class="card">
+          <h2>Создать оператора</h2>
+          <form id="create-account">
+            <label for="name">Имя оператора</label
+            ><input id="name" name="display_name" required maxlength="100" /><label for="username"
+              >Логин</label
+            ><input
+              id="username"
+              name="username"
+              required
+              minlength="3"
+              maxlength="40"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+            /><label for="new-password">Пароль</label
+            ><input
+              id="new-password"
+              name="password"
+              type="password"
+              required
+              minlength="8"
+              maxlength="128"
+              autocomplete="new-password"
+            />
+            <p id="account-department" class="muted"></p>
+            <button class="primary section-gap" type="submit">Создать аккаунт</button>
+          </form>
+        </section>
+        <section class="card">
+          <h2>Операторы</h2>
+          <div id="accounts"></div>
+        </section>
+      </div>
+      <p id="account-message" role="status"></p>
+    </main>
+    <div id="modal"></div>
+    <script type="module" src="/src/accounts.js"></script>
+    <script type="module" src="/src/navigation.js"></script>
+  </body>
+</html>

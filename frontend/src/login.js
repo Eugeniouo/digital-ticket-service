@@ -25,7 +25,7 @@ async function loadDepartments() {
   }
 }
 
-form.addEventListener('submit', async event => {
+form.addEventListener('submit', async (event) => {
   event.preventDefault();
   submit.disabled = true;
   try {
@@ -37,14 +37,19 @@ form.addEventListener('submit', async event => {
     setStaffSession(result.access_token, result.staff);
     location.assign('/src/staff.html');
   } catch (failure) {
-    error.textContent = failure instanceof ApiError && failure.status === 401
-      ? 'Неверный логин или пароль.'
-      : 'Не удалось войти. Попробуйте ещё раз.';
+    error.textContent =
+      failure instanceof ApiError && failure.status === 401
+        ? 'Неверный логин или пароль.'
+        : 'Не удалось войти. Попробуйте ещё раз.';
   } finally {
     submit.disabled = false;
   }
 });
-form.addEventListener('input', () => { error.textContent = ''; });
-form.addEventListener('change', () => { error.textContent = ''; });
+form.addEventListener('input', () => {
+  error.textContent = '';
+});
+form.addEventListener('change', () => {
+  error.textContent = '';
+});
 
 loadDepartments();

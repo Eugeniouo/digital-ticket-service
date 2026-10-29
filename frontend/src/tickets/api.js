@@ -1,13 +1,14 @@
-export { ApiError, departmentPath, request } from "../shared/api.js";
-import { departmentPath, request } from "../shared/api.js";
+export { ApiError, departmentPath, request } from '../shared/api.js';
+import { departmentPath, request } from '../shared/api.js';
 
-const ticketPath = (ref) => `${departmentPath(ref.departmentId)}/tickets/${encodeURIComponent(ref.ticketId)}`;
+const ticketPath = (ref) =>
+  `${departmentPath(ref.departmentId)}/tickets/${encodeURIComponent(ref.ticketId)}`;
 export const ticketApi = {
   get: (ref, signal) => request(ticketPath(ref), { signal }),
-  cancel: (ref, signal) => request(`${ticketPath(ref)}:cancel`, { method: "POST", signal }),
+  cancel: (ref, signal) => request(`${ticketPath(ref)}:cancel`, { method: 'POST', signal }),
   create: (departmentId, payload) =>
     request(`${departmentPath(departmentId)}/tickets`, {
-      method: "POST",
+      method: 'POST',
       body: payload,
     }),
   incomplete: (departmentId, signal) =>

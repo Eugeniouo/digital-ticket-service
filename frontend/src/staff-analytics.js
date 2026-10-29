@@ -1,7 +1,7 @@
-import { ticketSourceLabel } from "./shared/ticket-source.js";
+import { ticketSourceLabel } from './shared/ticket-source.js';
 
 function pad2(value) {
-  return String(value).padStart(2, "0");
+  return String(value).padStart(2, '0');
 }
 
 function utcDateValue(date) {
@@ -11,15 +11,24 @@ function utcDateValue(date) {
 /** Calendar-day arithmetic uses UTC to avoid daylight-saving hour shifts. */
 export function dateOffset(value, today = new Date()) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const [year, month, day] = value.split("-").map(Number);
+  const [year, month, day] = value.split('-').map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
-  const offset = Math.round((date.getTime() - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  )
+    return null;
+  const offset = Math.round(
+    (date.getTime() - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / 86400000,
+  );
   return offset <= 0 ? offset : null;
 }
 
 export function dateValueFromOffset(offset = 0, today = new Date()) {
-  return utcDateValue(new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + offset)));
+  return utcDateValue(
+    new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate() + offset)),
+  );
 }
 
 export function todayDateValue(today = new Date()) {
@@ -27,11 +36,11 @@ export function todayDateValue(today = new Date()) {
 }
 
 export function formatRuDate(dateValue) {
-  const [year, month, day] = dateValue.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString("ru-RU", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
+  const [year, month, day] = dateValue.split('-').map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   });
 }
 

@@ -1,6 +1,8 @@
 /** Update existing DOM instead of discarding loaded images and focused controls. */
 export function renderHtml(container, html) {
-  const images = new Map([...container.querySelectorAll('img')].map(image => [image.getAttribute('src'), image]));
+  const images = new Map(
+    [...container.querySelectorAll('img')].map((image) => [image.getAttribute('src'), image]),
+  );
   const template = document.createElement('template');
   template.innerHTML = html;
   reconcile(container, template.content);
@@ -11,7 +13,8 @@ export function renderHtml(container, html) {
     for (const attribute of [...previous.attributes]) {
       if (!image.hasAttribute(attribute.name)) previous.removeAttribute(attribute.name);
     }
-    for (const attribute of image.attributes) previous.setAttribute(attribute.name, attribute.value);
+    for (const attribute of image.attributes)
+      previous.setAttribute(attribute.name, attribute.value);
     image.replaceWith(previous);
   }
 }
@@ -20,7 +23,10 @@ function reconcile(parent, incoming) {
   const desired = [...incoming.childNodes];
   desired.forEach((next, index) => {
     const current = parent.childNodes[index];
-    if (!current) { parent.append(next.cloneNode(true)); return; }
+    if (!current) {
+      parent.append(next.cloneNode(true));
+      return;
+    }
     if (current.nodeType !== next.nodeType || current.nodeName !== next.nodeName) {
       current.replaceWith(next.cloneNode(true));
       return;

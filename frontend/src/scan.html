@@ -1,3 +1,39 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Сканировать QR — Почта России</title><link rel="stylesheet" href="/src/login.css"><link rel="stylesheet" href="/src/scan.css"></head>
-<body><main class="login-layout"><section class="login-card scan-card"><img class="login-logo" src="/assets/logo.svg" alt="Почта России"><p class="eyebrow">Электронная очередь</p><h1>Наведите камеру на QR-код</h1><p class="description">Найдите код у входа в отделение.<br>Мы откроем страницу получения талона.</p><div class="camera-frame"><video id="camera" autoplay muted playsinline aria-label="Изображение с камеры"></video><div class="scan-guide" aria-hidden="true"></div><span id="camera-placeholder">QR-код должен попасть в рамку</span></div><p id="scan-status" role="status" class="description">Камера выключена. Видео обрабатывается на устройстве и не отправляется на сервер.</p><button id="start-camera" class="login-submit">Включить камеру</button><button id="stop-camera" class="stop-camera" hidden>Выключить камеру</button><a class="visitor-link" href="/booking">Записаться на дату и время →</a><p class="demo-note">Если сканер недоступен, откройте обычную камеру телефона и наведите её на QR-код отделения.</p></section></main><script src="/assets/jsQR.js"></script><script type="module" src="/src/scan.js"></script></body></html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Сканировать QR — Почта России</title>
+    <link rel="stylesheet" href="/src/login.css" />
+    <link rel="stylesheet" href="/src/scan.css" />
+  </head>
+  <body>
+    <main class="login-layout">
+      <section class="login-card scan-card">
+        <img class="login-logo" src="/assets/logo.svg" alt="Почта России" />
+        <p class="eyebrow">Электронная очередь</p>
+        <h1>Наведите камеру на QR-код</h1>
+        <p class="description">
+          Найдите код у входа в отделение.<br />Мы откроем страницу получения талона.
+        </p>
+        <div class="camera-frame">
+          <video id="camera" autoplay muted playsinline aria-label="Изображение с камеры"></video>
+          <div class="scan-guide" aria-hidden="true"></div>
+          <span id="camera-placeholder">QR-код должен попасть в рамку</span>
+        </div>
+        <p id="scan-status" role="status" class="description">
+          Камера выключена. Видео обрабатывается на устройстве и не отправляется на сервер.
+        </p>
+        <button id="start-camera" class="login-submit">Включить камеру</button
+        ><button id="stop-camera" class="stop-camera" hidden>Выключить камеру</button
+        ><a class="visitor-link" href="/booking">Записаться на дату и время →</a>
+        <p class="demo-note">
+          Если сканер недоступен, откройте обычную камеру телефона и наведите её на QR-код
+          отделения.
+        </p>
+      </section>
+    </main>
+    <script src="/assets/jsQR.js"></script>
+    <script type="module" src="/src/scan.js"></script>
+  </body>
+</html>

@@ -6,12 +6,12 @@ const PREFIX_BY_KIND = {
   payments: 'К',
   pension: 'С',
   other: 'У',
-}
+};
 
 export function ticketLabelPrefix(kind) {
-  return PREFIX_BY_KIND[kind] || PREFIX_BY_KIND.other
+  return PREFIX_BY_KIND[kind] || PREFIX_BY_KIND.other;
 }
 
 export function formatTicketLabel(prefix, serial) {
-  return `${prefix}-${String(serial).padStart(3, '0')}`
+  return `${prefix}-${String(serial).padStart(3, '0')}`;
 }

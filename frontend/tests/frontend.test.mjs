@@ -11,8 +11,12 @@ const catalog = [
 
 function makeState() {
   return {
-    queue: [], current: null, opened: true,
-    enabled: catalog.map(service => service.id), served: 0, issues: [],
+    queue: [],
+    current: null,
+    opened: true,
+    enabled: catalog.map((service) => service.id),
+    served: 0,
+    issues: [],
     rules: [10, 10, 20, 2],
     services: catalog,
     windows: [],
@@ -69,14 +73,16 @@ test('windows and overview use API rows instead of a hardcoded catalog', () => {
   assert.doesNotMatch(views.overview(), /Елена Петрова/);
   assert.doesNotMatch(views.overview(), /Обслужено · демо/);
   assert.match(views.windows(), /Окон в отделении нет/);
-  state.windows = [{
-    id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
-    label: 'Окно 1',
-    status: 'open',
-    service_ids: [catalog[0].id],
-    open_service_ids: [catalog[0].id],
-    current_operator_id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
-  }];
+  state.windows = [
+    {
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1',
+      label: 'Окно 1',
+      status: 'open',
+      service_ids: [catalog[0].id],
+      open_service_ids: [catalog[0].id],
+      current_operator_id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
+    },
+  ];
   state.staffList = [{ id: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', display_name: 'Иван Оператор' }];
   assert.match(views.windows(), /Окно 1/);
   assert.match(views.windows(), /Иван Оператор/);
