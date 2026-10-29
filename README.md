@@ -1,5 +1,7 @@
 # Next-Generation Digital Queue
 
+[![CI](https://github.com/Eugeniouo/digital-ticket-service/actions/workflows/ci.yml/badge.svg)](https://github.com/Eugeniouo/digital-ticket-service/actions/workflows/ci.yml)
+
 An MVP of a digital queue management system, built during the Russian Post hackathon (PostCode Challenge by Pochtatech).
 Visitors, operators and branch managers all work in a browser on their own devices — no dedicated kiosk or ticket hardware required.
 The queue lives on the server; its state is stored in PostgreSQL and survives restarts.
@@ -390,6 +392,7 @@ Branch resources are nested under `/api/departments/{department_id}/…`: servic
 | `just gen_migrations "…"` | generate a new migration |
 | `just test` | backend and frontend tests |
 | `just fmt` / `just lint` | format and lint Python |
+| `npm --prefix frontend run format` | format the frontend with Prettier |
 | `just logs api` | service logs |
 | `just psql` | PostgreSQL console |
 | `just down` | stop Compose and remove volumes |
