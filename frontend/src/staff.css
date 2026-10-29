@@ -137,6 +137,12 @@ header small {
   grid-template-columns: 230px minmax(0, 1fr);
   min-height: calc(100vh - 86px);
 }
+.embedded-page {
+  width: 100%;
+  min-height: 900px;
+  border: 0;
+  border-radius: 20px;
+}
 aside {
   background: white;
   padding: 28px 18px;
@@ -371,6 +377,23 @@ tbody tr[data-action] {
 }
 .section-gap {
   margin-top: 24px;
+}
+.analytics-nav {
+  margin: 0 0 24px;
+}
+.analytics-nav-date {
+  text-align: center;
+}
+.load-track {
+  height: 8px;
+  margin-top: 12px;
+  background: #eef0ff;
+  border-radius: 8px;
+}
+.load-fill {
+  height: 8px;
+  background: var(--blue);
+  border-radius: 8px;
 }
 .bars {
   height: 180px;

@@ -126,7 +126,7 @@ export function createStaffViews(getState) {
     } = getState();
     const label = report?.label ?? analyticsLabel;
     const dateValue = report?.dateValue ?? analyticsDateValue;
-    const header = `<section class="card row section-gap" style="margin:0 0 24px"><button class="ghost" data-action="analytics-previous" aria-label="Предыдущий день">←</button><div style="text-align:center"><div class="report-date"><span>${esc(label)}</span><button class="report-date-toggle" data-action="open-report-calendar" aria-label="Открыть календарь"><span aria-hidden="true"></span></button><input id="analytics-date" class="report-date-input" type="date" aria-label="Дата отчёта" value="${esc(dateValue)}" max="${esc(analyticsToday)}"></div><div class="muted">Статистика за день</div></div><div class="row">${btn('Сегодня', 'analytics-today', 'ghost compact', analyticsOffset === 0)}<button class="ghost" data-action="analytics-next" aria-label="Следующий день" ${analyticsOffset === 0 ? 'disabled' : ''}>→</button></div></section>`;
+    const header = `<section class="card row analytics-nav"><button class="ghost" data-action="analytics-previous" aria-label="Предыдущий день">←</button><div class="analytics-nav-date"><div class="report-date"><span>${esc(label)}</span><button class="report-date-toggle" data-action="open-report-calendar" aria-label="Открыть календарь"><span aria-hidden="true"></span></button><input id="analytics-date" class="report-date-input" type="date" aria-label="Дата отчёта" value="${esc(dateValue)}" max="${esc(analyticsToday)}"></div><div class="muted">Статистика за день</div></div><div class="row">${btn('Сегодня', 'analytics-today', 'ghost compact', analyticsOffset === 0)}<button class="ghost" data-action="analytics-next" aria-label="Следующий день" ${analyticsOffset === 0 ? 'disabled' : ''}>→</button></div></section>`;
     if (analyticsStatus === 'error') {
       return `${header}<section class="card"><p>Не удалось загрузить аналитику.</p>${btn('Повторить', 'analytics-reload', 'primary')}</section>`;
     }
@@ -161,7 +161,7 @@ export function createStaffViews(getState) {
       .map((item) => {
         const shown = item.percent == null ? '—' : `${item.percent}%`;
         const width = item.percent == null ? 0 : Math.min(100, Math.max(0, item.percent));
-        return `<div class="queue-item"><div class="row"><span>${esc(item.label)}</span><strong>${shown}</strong></div><div style="height:8px;background:#eef0ff;border-radius:8px;margin-top:12px"><div style="width:${width}%;background:#1928dc;height:8px;border-radius:8px"></div></div></div>`;
+        return `<div class="queue-item"><div class="row"><span>${esc(item.label)}</span><strong>${shown}</strong></div><div class="load-track"><div class="load-fill" style="width:${width}%"></div></div></div>`;
       })
       .join('');
     return `${header}<div class="grid stats">${stats}</div><div class="grid two"><section class="card"><h2>Обслуженные клиенты по часам</h2><p class="muted">${esc(report.label)}</p><div class="bars">${hours}</div></section><section class="card"><h2>Источники обращений</h2>${sources}</section></div><section class="card section-gap"><h2>Загрузка окон</h2><p class="muted">Доля обслуживания от времени открытого окна</p>${windowsLoad || '<p class="muted">Окон в отделении нет</p>'}</section>`;

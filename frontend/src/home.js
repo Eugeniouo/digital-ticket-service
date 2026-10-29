@@ -1,16 +1,47 @@
+const params = new URLSearchParams(location.search);
 const isBooking = location.pathname.startsWith('/booking');
-const isQr = new URLSearchParams(location.search).get('source') === 'qr';
-if (new URLSearchParams(location.search).get('view') === 'ticket') {
+const isQr = params.get('source') === 'qr';
+
+const HOME_ACTIONS = [
+  {
+    href: '/booking',
+    title: 'Записаться в отделение',
+    hint: 'Выберите услугу, дату и время',
+  },
+  {
+    href: '/src/scan.html',
+    title: 'Отсканировать QR',
+    hint: 'Получите талон в отделении',
+  },
+  {
+    href: '/src/login.html',
+    title: 'Войти как сотрудник отделения',
+    hint: 'Вход в рабочее пространство',
+    className: 'home-action-staff',
+  },
+];
+
+function homeAction({ href, title, hint, className }, index) {
+  const number = String(index + 1).padStart(2, '0');
+  const classes = className ? `home-action ${className}` : 'home-action';
+  return `<a class="${classes}" href="${href}"><span class="home-symbol" aria-hidden="true">${number}</span><span><strong>${title}</strong><small>${hint}</small></span><span aria-hidden="true">→</span></a>`;
+}
+
+function homeScreen() {
+  const intro =
+    '<img class="logo" src="/assets/logo.svg" alt="Почта России"><p class="home-kicker">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p><h1>Как мы можем помочь?</h1><p class="home-description">Выберите удобный способ обращения</p>';
+  return `<main class="screen home-screen">${intro}<div class="home-actions">${HOME_ACTIONS.map(homeAction).join('')}</div></main>`;
+}
+
+if (params.get('view') === 'ticket') {
   await import('./tickets/page.js');
 } else if (isBooking || isQr) {
   await import('./app.js');
 } else {
-  document.querySelector('#root').innerHTML =
-    `<main class="screen home-screen"><img class="logo" src="/assets/logo.svg" alt="Почта России"><p class="home-kicker">ЭЛЕКТРОННАЯ ОЧЕРЕДЬ</p><h1>Как мы можем помочь?</h1><p class="home-description">Выберите удобный способ обращения</p><div class="home-actions"><a class="home-action" href="/booking"><span class="home-symbol" aria-hidden="true">01</span><span><strong>Записаться в отделение</strong><small>Выберите услугу, дату и время</small></span><span aria-hidden="true">→</span></a><a class="home-action" href="/src/scan.html"><span class="home-symbol" aria-hidden="true">02</span><span><strong>Отсканировать QR</strong><small>Получите талон в отделении</small></span><span aria-hidden="true">→</span></a><a class="home-action home-action-staff" href="/src/login.html"><span class="home-symbol" aria-hidden="true">03</span><span><strong>Войти как сотрудник отделения</strong><small>Вход в рабочее пространство</small></span><span aria-hidden="true">→</span></a></div></main>`;
-}
-if (!isBooking && !isQr && !new URLSearchParams(location.search).has('view')) {
+  document.querySelector('#root').innerHTML = homeScreen();
+
   const { createTicketStorage } = await import('./tickets/storage.js');
-  if (createTicketStorage().read()) {
+  if (!params.has('view') && createTicketStorage().read()) {
     const link = document.createElement('a');
     link.className = 'home-action';
     link.href = '/?view=ticket';

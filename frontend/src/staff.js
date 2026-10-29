@@ -32,13 +32,13 @@ let analyticsOffset = 0;
 
 const root = document.querySelector('#staff');
 const modal = document.querySelector('#modal');
-let role = signedOperator?.role === 'admin' ? 'admin' : 'operator',
-  page = role === 'admin' ? 'Обзор' : 'Рабочее место',
-  opened = false,
-  current = null,
-  served = 0,
-  windowId = null,
-  loadError = '';
+const role = signedOperator?.role === 'admin' ? 'admin' : 'operator';
+let page = role === 'admin' ? 'Обзор' : 'Рабочее место';
+let opened = false;
+let current = null;
+let served = 0;
+let windowId = null;
+let loadError = '';
 let queue = [];
 let enabled = [];
 const options = () =>
@@ -60,7 +60,6 @@ let analyticsRequest = 0;
 let analyticsAbort = null;
 let actionBusy = false;
 const {
-  queueList,
   table,
   operator,
   windows: windowsView,
@@ -143,11 +142,9 @@ function failMessage(error, fallback) {
   return fallback;
 }
 
-function windowChecks(window, selectedIds) {
+function serviceChecks(list, selectedIds) {
   const selected = new Set(selectedIds ?? []);
-  const catalog = services.filter((service) => (window?.service_ids ?? []).includes(service.id));
-
-  return catalog
+  return list
     .map(
       (s) =>
         `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${selected.has(s.id) ? 'checked' : ''}>${esc(s.name)}</label>`,
@@ -155,15 +152,18 @@ function windowChecks(window, selectedIds) {
     .join('');
 }
 
-function catalogChecks(window) {
-  const selected = new Set(window?.service_ids ?? []);
+/** Services the window can open with; the window's open set is preselected. */
+function windowChecks(window) {
+  const catalog = services.filter((service) => (window?.service_ids ?? []).includes(service.id));
+  const selectedIds = window?.open_service_ids?.length
+    ? window.open_service_ids
+    : window?.service_ids;
+  return serviceChecks(catalog, selectedIds);
+}
 
-  return services
-    .map(
-      (s) =>
-        `<label><input type="checkbox" name="services" value="${esc(s.id)}" ${selected.has(s.id) ? 'checked' : ''}>${esc(s.name)}</label>`,
-    )
-    .join('');
+/** The whole department catalog; the window's catalog is preselected. */
+function catalogChecks(window) {
+  return serviceChecks(services, window?.service_ids);
 }
 
 function bindWindowSelect() {
@@ -173,10 +173,7 @@ function bindWindowSelect() {
 
   select.addEventListener('change', () => {
     const window = windows.find((item) => item.id === select.value);
-    checks.innerHTML = windowChecks(
-      window,
-      window?.open_service_ids?.length ? window.open_service_ids : window?.service_ids,
-    );
+    checks.innerHTML = windowChecks(window);
   });
 }
 
@@ -198,52 +195,82 @@ function problemsPage() {
   return `<section class="card"><h2>Проблемы и отклонения</h2>${rows}${btn('Сообщить о проблеме', 'problem', 'ghost')}</section>`;
 }
 
+const OPERATOR_NAV = ['Рабочее место', 'История смены'];
+const ADMIN_NAV = [
+  'Обзор',
+  'Очередь',
+  'Окна и услуги',
+  'Правила очереди',
+  'Аналитика',
+  'Проблемы и журнал',
+  'Аккаунты',
+  'QR отделения',
+];
+
+const embeddedPage = (title, src) =>
+  `<iframe class="embedded-page" title="${esc(title)}" src="${src}"></iframe>`;
+
+const PAGES = {
+  'Рабочее место': () => operator(),
+  'История смены': () =>
+    '<section class="card"><h2>История смены</h2><p class="muted">Журнала смены в API нет. История одного талона открывается кнопкой «История».</p></section>',
+  Обзор: () => overview(),
+  Очередь: () => `<section class="card"><h2>Все талоны</h2>${table()}</section>`,
+  'Окна и услуги': () => windowsView(),
+  'Правила очереди': () => rulesView(),
+  Аналитика: () => analytics(),
+  'Проблемы и журнал': () => problemsPage(),
+  Аккаунты: () => embeddedPage('Аккаунты', '/src/accounts.html'),
+  'QR отделения': () => embeddedPage('QR отделения', '/src/qr.html'),
+};
+
+function pageHeader() {
+  const brand =
+    '<div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div>';
+  const department = `<div><strong>Отделение № ${esc(operatorDepartment?.code ?? '—')}</strong><small>${esc(operatorDepartment?.address ?? '')}</small></div>`;
+  return `<header>${brand}${department}</header>`;
+}
+
+function sidebar(nav) {
+  const links = nav.map((n) => btn(n, 'nav-' + n, page === n ? 'active' : '')).join('');
+  return `<aside>${links}<div class="aside-note"><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside>`;
+}
+
+function pageHeading() {
+  const isOperator = role === 'operator';
+  const subtitle = isOperator
+    ? `${esc(seatedWindow()?.label || 'Окно не открыто')} · ${esc(signedOperator?.display_name || 'Оператор')}`
+    : 'Состояние отделения и управление обслуживанием';
+  const windowToggle = isOperator
+    ? btn(opened ? 'Закрыть окно' : 'Открыть окно', opened ? 'close' : 'open', 'ghost')
+    : '';
+  const title = `<div><div class="demo">Рабочее пространство / ${isOperator ? 'Оператор' : 'Руководитель'}</div><h1>${esc(page)}</h1><span class="muted">${subtitle}</span></div>`;
+  return `<div class="heading">${title}<div class="row">${windowToggle}</div></div>`;
+}
+
 function render() {
-  const nav =
-    role === 'operator'
-      ? ['Рабочее место', 'История смены']
-      : [
-          'Обзор',
-          'Очередь',
-          'Окна и услуги',
-          'Правила очереди',
-          'Аналитика',
-          'Проблемы и журнал',
-          'Аккаунты',
-          'QR отделения',
-        ];
-  const heading =
-    role === 'operator'
-      ? `${esc(seatedWindow()?.label || 'Окно не открыто')} · ${esc(signedOperator?.display_name || 'Оператор')}`
-      : 'Состояние отделения и управление обслуживанием';
-  const body =
-    page === 'Аккаунты' || page === 'QR отделения'
-      ? `<iframe title="${page}" src="/src/${page === 'Аккаунты' ? 'accounts' : 'qr'}.html" style="width:100%;min-height:900px;border:0;border-radius:20px"></iframe>`
-      : page === 'Рабочее место'
-        ? operator()
-        : page === 'Обзор'
-          ? overview()
-          : page === 'Очередь'
-            ? `<section class="card"><h2>Все талоны</h2>${table()}</section>`
-            : page === 'Окна и услуги'
-              ? windowsView()
-              : page === 'Правила очереди'
-                ? rulesView()
-                : page === 'Аналитика'
-                  ? analytics()
-                  : page === 'История смены'
-                    ? `<section class="card"><h2>История смены</h2><p class="muted">Журнала смены в API нет. История одного талона открывается кнопкой «История».</p></section>`
-                    : problemsPage();
+  const nav = role === 'operator' ? OPERATOR_NAV : ADMIN_NAV;
+  const body = (PAGES[page] ?? problemsPage)();
   renderHtml(
     root,
-    `<header><div><img src="/assets/logo.svg" alt="Почта России"><small>Электронная очередь · Для сотрудников</small></div><div><strong>Отделение № ${esc(operatorDepartment?.code ?? '—')}</strong><small>${esc(operatorDepartment?.address ?? '')}</small></div></header><div class="layout"><aside>${nav.map((n) => btn(n, 'nav-' + n, page === n ? 'active' : '')).join('')}<div class="aside-note"><a class="link" href="/">Клиентский интерфейс ↗</a></div></aside><main><div class="heading"><div><div class="demo">Рабочее пространство / ${role === 'operator' ? 'Оператор' : 'Руководитель'}</div><h1>${page}</h1><span class="muted">${heading}</span></div><div class="row">${role === 'operator' ? btn(opened ? 'Закрыть окно' : 'Открыть окно', opened ? 'close' : 'open', 'ghost') : ''}</div></div>${body}</main></div>`,
+    `${pageHeader()}<div class="layout">${sidebar(nav)}<main>${pageHeading()}${body}</main></div>`,
   );
 }
+let historyRequest = 0;
+
 function dialog(title, body, footer) {
-  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="row"><h2>${esc(title)}</h2>${btn('✕', 'dismiss', 'ghost compact')}</div>${body}<div class="footer">${footer || btn('Сохранить', 'confirm', 'primary')}</div></section></div>`;
+  const heading = `<div class="row"><h2>${esc(title)}</h2>${btn('✕', 'dismiss', 'ghost compact')}</div>`;
+  const actions = footer || btn('Сохранить', 'confirm', 'primary');
+  modal.innerHTML = `<div class="backdrop"><section class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}">${heading}${body}<div class="footer">${actions}</div></section></div>`;
   modal.querySelector('input,select,textarea,button')?.focus();
 }
-let historyRequest = 0;
+
+function closeModal() {
+  // A ticket history request still in flight must not repaint a closed dialog.
+  historyRequest++;
+  modal.innerHTML = '';
+}
+
 function findTicket(ticketId) {
   if (ticketId) {
     return [current, ...queue].find((ticket) => ticket?.id === ticketId) || null;
@@ -370,10 +397,7 @@ async function runWindowAction(fn, fallback) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') {
-    historyRequest++;
-    modal.innerHTML = '';
-  }
+  if (e.key === 'Escape') closeModal();
   if (e.key === 'Tab' && modal.firstChild) {
     const els = [...modal.querySelectorAll('button,input,select,textarea')];
     if (e.shiftKey && document.activeElement === els[0]) {
@@ -422,14 +446,14 @@ async function handleAction(a, trigger) {
     return;
   }
   if (a === 'dismiss') {
-    historyRequest++;
-    modal.innerHTML = '';
+    closeModal();
     return;
   }
 
   if (a.startsWith('nav-')) {
-    if (role !== 'admin' && !['nav-Рабочее место', 'nav-История смены'].includes(a)) return;
-    page = a.slice(4);
+    const target = a.slice(4);
+    if (role !== 'admin' && !OPERATOR_NAV.includes(target)) return;
+    page = target;
     render();
     if (page === 'Правила очереди') void loadQueueRules();
     if (page === 'Аналитика') void loadAnalytics();
@@ -512,7 +536,7 @@ async function handleAction(a, trigger) {
         : '';
     dialog(
       a === 'open' ? 'Открытие окна' : `Услуги ${selected.label}`,
-      `${windowField}<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${windowChecks(selected, selected.open_service_ids?.length ? selected.open_service_ids : selected.service_ids)}</div>`,
+      `${windowField}<p class="muted">Выберите услуги, которые может обслуживать окно.</p><div class="checks">${windowChecks(selected)}</div>`,
     );
     bindWindowSelect();
     return;
@@ -586,9 +610,20 @@ async function confirmDialog() {
   }
   if (actionBusy) return;
   actionBusy = true;
+
+  const checkedValues = () => [...modal.querySelectorAll('input:checked')].map((x) => x.value);
+  const selectedService = () =>
+    services.find((item) => item.id === modal.querySelector('#service').value);
+  const succeed = async (text) => {
+    notify(text);
+    closeModal();
+    await reloadSurface();
+  };
+  const ticketLabel = current?.ticket_label || 'Талон';
+
   try {
     if (pending === 'open' || pending === 'services') {
-      const values = [...modal.querySelectorAll('input:checked')].map((x) => x.value);
+      const values = checkedValues();
       if (!values.length) {
         notify('Выберите хотя бы одну услугу');
         return;
@@ -599,21 +634,16 @@ async function confirmDialog() {
         return;
       }
       await windowsApi.open(id, selectedId, { open_service_ids: values });
-      notify(pending === 'open' ? 'Окно открыто' : 'Услуги окна сохранены');
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed(pending === 'open' ? 'Окно открыто' : 'Услуги окна сохранены');
       return;
     }
     if (pending === 'configure-window') {
-      const values = [...modal.querySelectorAll('input:checked')].map((x) => x.value);
-      await windowsApi.update(id, pendingWindowId, { service_ids: values });
-      notify('Настройки окна сохранены');
-      modal.innerHTML = '';
-      await reloadSurface();
+      await windowsApi.update(id, pendingWindowId, { service_ids: checkedValues() });
+      await succeed('Настройки окна сохранены');
       return;
     }
     if (pending === 'add') {
-      const service = services.find((item) => item.id === modal.querySelector('#service').value);
+      const service = selectedService();
       if (!service) {
         notify('Выберите услугу');
         return;
@@ -623,63 +653,44 @@ async function confirmDialog() {
         source: 'walk-in',
         slot_id: null,
       });
-      notify(`Добавлен талон ${ticket.ticket_label}`);
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed(`Добавлен талон ${ticket.ticket_label}`);
       return;
     }
     if (pending === 'problem') {
       await issuesApi.create(id, { message: reason });
-      notify('Проблема зарегистрирована');
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed('Проблема зарегистрирована');
+      return;
+    }
+    // The remaining actions act on the operator's own window.
+    if (['redirect', 'return', 'close-return'].includes(pending) && !windowId) {
+      notify('Сначала откройте окно');
       return;
     }
     if (pending === 'redirect') {
-      const service = services.find((item) => item.id === modal.querySelector('#service').value);
+      const service = selectedService();
       if (!service) {
         notify('Выберите услугу');
         return;
       }
-      if (!windowId) {
-        notify('Сначала откройте окно');
-        return;
-      }
       await windowsApi.redirect(id, windowId, { service_id: service.id });
-      notify(`${current?.ticket_label || 'Талон'}: перенаправлен`);
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed(`${ticketLabel}: перенаправлен`);
       return;
     }
     if (pending === 'return') {
-      if (!windowId) {
-        notify('Сначала откройте окно');
-        return;
-      }
       await windowsApi.requeue(id, windowId);
-      notify(`${current?.ticket_label || 'Талон'}: возвращён в очередь`);
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed(`${ticketLabel}: возвращён в очередь`);
       return;
     }
     if (pending === 'close-return') {
-      if (!windowId) {
-        notify('Сначала откройте окно');
-        return;
-      }
       await windowsApi.requeue(id, windowId);
       await windowsApi.close(id, windowId);
-      notify('Клиент возвращён в очередь, окно закрыто');
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed('Клиент возвращён в очередь, окно закрыто');
       return;
     }
-    modal.innerHTML = '';
+    closeModal();
   } catch (error) {
     if (pending === 'close-return' && error?.status === 409) {
-      notify('Клиент возвращён в очередь. Окно нельзя закрыть, пока есть активный талон.');
-      modal.innerHTML = '';
-      await reloadSurface();
+      await succeed('Клиент возвращён в очередь. Окно нельзя закрыть, пока есть активный талон.');
       return;
     }
     notify(failMessage(error, 'Не удалось выполнить действие'));
